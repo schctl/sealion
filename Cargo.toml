@@ -1,0 +1,9 @@
+[package]
+name = "sealion"
+edition = "2021"
+version = "0.0.1"
+authors = ["Sachin Cherian <sachinctl@protonmail.com>"]
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
