@@ -10,6 +10,9 @@ publish = false
 license = "Apache-2.0"
 authors = ["Sachin Cherian <sachinctl@protonmail.com>"]
 
+[workspace.dependencies]
+sealion_board = { path = "crates/board" }
+
 # --- sealion binary ---
 
 [package]
@@ -21,6 +24,7 @@ license = { workspace = true }
 authors = { workspace = true }
 
 [dependencies]
+sealion_board = { workspace = true }
 
 [profile.release]
 lto = true

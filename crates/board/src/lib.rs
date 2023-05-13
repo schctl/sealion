@@ -1,5 +1,8 @@
 use std::fmt::Display;
+use std::ops::Not;
 use std::str::FromStr;
+
+pub mod fen;
 
 /// All possible piece types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -12,18 +15,48 @@ pub enum PieceKind {
     King,
 }
 
+/// Represents a player or a piece's color.
+#[repr(i8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Color {
+    White = 1,
+    Black = -1,
+}
+
+impl Color {
+    /// Get the opposite color for this player.
+    #[inline]
+    pub const fn opposite(&self) -> Self {
+        match self {
+            Self::White => Self::Black,
+            Self::Black => Self::White,
+        }
+    }
+}
+
+impl Not for Color {
+    type Output = Self;
+
+    /// Does [`Color::opposite`].
+    #[inline]
+    fn not(self) -> Self::Output {
+        self.opposite()
+    }
+}
+
 /// Piece belonging to a side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Piece {
-    White(PieceKind),
-    Black(PieceKind),
+pub struct Piece {
+    color: Color,
+    kind: PieceKind,
 }
 
 impl Piece {
+    /// Standard representation for this piece.
     #[inline]
     pub const fn as_char(&self) -> char {
-        match self {
-            Self::White(p) => match p {
+        match self.color {
+            Color::White => match self.kind {
                 PieceKind::Pawn => 'P',
                 PieceKind::Knight => 'N',
                 PieceKind::Bishop => 'B',
@@ -31,7 +64,7 @@ impl Piece {
                 PieceKind::Queen => 'Q',
                 PieceKind::King => 'K',
             },
-            Self::Black(p) => match p {
+            Color::Black => match self.kind {
                 PieceKind::Pawn => 'p',
                 PieceKind::Knight => 'n',
                 PieceKind::Bishop => 'b',
@@ -41,11 +74,33 @@ impl Piece {
             },
         }
     }
+
+    #[inline]
+    pub const fn from_char(c: char) -> Option<Self> {
+        let (color, kind) = match c {
+            'P' => (Color::White, PieceKind::Pawn),
+            'N' => (Color::White, PieceKind::Knight),
+            'B' => (Color::White, PieceKind::Bishop),
+            'R' => (Color::White, PieceKind::Rook),
+            'Q' => (Color::White, PieceKind::Queen),
+            'K' => (Color::White, PieceKind::King),
+            // -
+            'p' => (Color::Black, PieceKind::Pawn),
+            'n' => (Color::Black, PieceKind::Knight),
+            'b' => (Color::Black, PieceKind::Bishop),
+            'r' => (Color::Black, PieceKind::Rook),
+            'q' => (Color::Black, PieceKind::Queen),
+            'k' => (Color::Black, PieceKind::King),
+            _ => return None,
+        };
+
+        Some(Self { color, kind })
+    }
 }
 
 /// A position on the board.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Square(u8);
+pub struct Square(pub(crate) u8);
 
 impl Square {
     /// The square at a particular rank and file.
@@ -114,13 +169,17 @@ impl Display for Square {
     }
 }
 
-/// Chessboard with piece positions.
+/// Piece position information.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Position {
-    internal: [Option<Piece>; 64],
-}
+pub struct Position([Option<Piece>; 64]);
 
 impl Position {
+    /// Empty position.
+    #[inline]
+    pub const fn empty() -> Self {
+        Self([None; 64])
+    }
+
     /// Get the piece present at a certain square.
     #[inline]
     pub fn get<ToSquare>(&self, index: ToSquare) -> Option<Piece>
@@ -128,8 +187,56 @@ impl Position {
         Square: TryFrom<ToSquare>,
     {
         let square = Square::try_from(index).ok()?;
-        self.internal.get(square.0 as usize).copied().flatten()
+        self.0.get(square.0 as usize).copied().flatten()
     }
+
+    /// Set the piece at a certain square.
+    #[inline]
+    pub fn set<ToSquare>(&mut self, index: ToSquare, piece: Option<Piece>) -> Option<Piece>
+    where
+        Square: TryFrom<ToSquare>,
+    {
+        let square = Square::try_from(index).ok()?;
+        let old = self.0.get_mut(square.0 as usize)?;
+        std::mem::replace(old, piece)
+    }
+}
+
+bitflags::bitflags! {
+    /// Player castling availability.
+    pub struct CastlingRights: u8 {
+        /// White kingside.
+        const WHITE_OO = 0x01;
+        /// White queenside.
+        const WHITE_OOO = 0x02;
+        /// Black kingside.
+        const BLACK_OO = 0x04;
+        /// Black queenside.
+        const BLACK_OOO = 0x08;
+    }
+}
+
+/// Full chessboard state.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Board {
+    /// Piece positions.
+    position: Position,
+    /// Whose turn it is to move.
+    active_color: Color,
+    /// Castling rights flags.
+    castling: CastlingRights,
+    /// En passant target square.
+    ep_target: Option<Square>,
+    /// Half-move (ply) clock.
+    ///
+    /// A half-move is a single move made by a single player. This counts the number of half-moves
+    /// since the last capture, pawn move, or check; and is used for the 50-move rule.
+    halfmove_clock: u8,
+    /// Full-move counter.
+    ///
+    /// A full-move consists of two half-moves, one by white and one by black. This counts the total
+    /// number of moves since the game began. It starts at 1 and increments after black's move.
+    fullmove_counter: u8,
 }
 
 #[cfg(test)]

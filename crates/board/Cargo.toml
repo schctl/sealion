@@ -1,5 +1,5 @@
 [package]
-name = "sealion-board"
+name = "sealion_board"
 edition = { workspace = true }
 version = { workspace = true }
 publish = { workspace = true }
@@ -7,3 +7,5 @@ license = { workspace = true }
 authors = { workspace = true }
 
 [dependencies]
+bitflags = "1"
+nom = "7"
