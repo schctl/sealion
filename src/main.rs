@@ -8,7 +8,7 @@ fn main() {
         fen.clear();
         stdin.read_line(&mut fen).unwrap();
 
-        let (_, board) = sealion_board::fen::parse(&fen).unwrap();
-        println!("{:?}", board);
+        let (_, position) = sealion_board::fen::parse(&fen).unwrap();
+        println!("{}", position.board);
     }
 }

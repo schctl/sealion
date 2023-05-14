@@ -9,3 +9,7 @@ authors = { workspace = true }
 [dependencies]
 bitflags = "1"
 nom = "7"
+
+# Macros
+derive_more = { version = "0.99", features = ["add", "mul"] }
+strum = { version = "0.24", features = ["derive"] }

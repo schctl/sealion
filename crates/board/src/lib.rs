@@ -1,104 +1,19 @@
 use std::fmt::Display;
-use std::ops::Not;
 use std::str::FromStr;
 
+use strum::EnumCount;
+
+pub mod bitboard;
 pub mod fen;
+pub mod piece;
+pub mod position;
 
-/// All possible piece types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PieceKind {
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King,
-}
-
-/// Represents a player or a piece's color.
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Color {
-    White = 1,
-    Black = -1,
-}
-
-impl Color {
-    /// Get the opposite color for this player.
-    #[inline]
-    pub const fn opposite(&self) -> Self {
-        match self {
-            Self::White => Self::Black,
-            Self::Black => Self::White,
-        }
-    }
-}
-
-impl Not for Color {
-    type Output = Self;
-
-    /// Does [`Color::opposite`].
-    #[inline]
-    fn not(self) -> Self::Output {
-        self.opposite()
-    }
-}
-
-/// Piece belonging to a side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Piece {
-    color: Color,
-    kind: PieceKind,
-}
-
-impl Piece {
-    /// Standard representation for this piece.
-    #[inline]
-    pub const fn as_char(&self) -> char {
-        match self.color {
-            Color::White => match self.kind {
-                PieceKind::Pawn => 'P',
-                PieceKind::Knight => 'N',
-                PieceKind::Bishop => 'B',
-                PieceKind::Rook => 'R',
-                PieceKind::Queen => 'Q',
-                PieceKind::King => 'K',
-            },
-            Color::Black => match self.kind {
-                PieceKind::Pawn => 'p',
-                PieceKind::Knight => 'n',
-                PieceKind::Bishop => 'b',
-                PieceKind::Rook => 'r',
-                PieceKind::Queen => 'q',
-                PieceKind::King => 'k',
-            },
-        }
-    }
-
-    #[inline]
-    pub const fn from_char(c: char) -> Option<Self> {
-        let (color, kind) = match c {
-            'P' => (Color::White, PieceKind::Pawn),
-            'N' => (Color::White, PieceKind::Knight),
-            'B' => (Color::White, PieceKind::Bishop),
-            'R' => (Color::White, PieceKind::Rook),
-            'Q' => (Color::White, PieceKind::Queen),
-            'K' => (Color::White, PieceKind::King),
-            // -
-            'p' => (Color::Black, PieceKind::Pawn),
-            'n' => (Color::Black, PieceKind::Knight),
-            'b' => (Color::Black, PieceKind::Bishop),
-            'r' => (Color::Black, PieceKind::Rook),
-            'q' => (Color::Black, PieceKind::Queen),
-            'k' => (Color::Black, PieceKind::King),
-            _ => return None,
-        };
-
-        Some(Self { color, kind })
-    }
-}
+pub use bitboard::*;
+pub use piece::*;
+pub use position::*;
 
 /// A position on the board.
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Square(pub(crate) u8);
 
@@ -169,74 +84,117 @@ impl Display for Square {
     }
 }
 
-/// Piece position information.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Position([Option<Piece>; 64]);
-
-impl Position {
-    /// Empty position.
-    #[inline]
-    pub const fn empty() -> Self {
-        Self([None; 64])
-    }
-
-    /// Get the piece present at a certain square.
-    #[inline]
-    pub fn get<ToSquare>(&self, index: ToSquare) -> Option<Piece>
-    where
-        Square: TryFrom<ToSquare>,
-    {
-        let square = Square::try_from(index).ok()?;
-        self.0.get(square.0 as usize).copied().flatten()
-    }
-
-    /// Set the piece at a certain square.
-    #[inline]
-    pub fn set<ToSquare>(&mut self, index: ToSquare, piece: Option<Piece>) -> Option<Piece>
-    where
-        Square: TryFrom<ToSquare>,
-    {
-        let square = Square::try_from(index).ok()?;
-        let old = self.0.get_mut(square.0 as usize)?;
-        std::mem::replace(old, piece)
-    }
-}
-
-bitflags::bitflags! {
-    /// Player castling availability.
-    pub struct CastlingRights: u8 {
-        /// White kingside.
-        const WHITE_OO = 0x01;
-        /// White queenside.
-        const WHITE_OOO = 0x02;
-        /// Black kingside.
-        const BLACK_OO = 0x04;
-        /// Black queenside.
-        const BLACK_OOO = 0x08;
-    }
-}
-
-/// Full chessboard state.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Represents the board and all the pieces on it.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct Board {
-    /// Piece positions.
-    position: Position,
-    /// Whose turn it is to move.
-    active_color: Color,
-    /// Castling rights flags.
-    castling: CastlingRights,
-    /// En passant target square.
-    ep_target: Option<Square>,
-    /// Half-move (ply) clock.
-    ///
-    /// A half-move is a single move made by a single player. This counts the number of half-moves
-    /// since the last capture, pawn move, or check; and is used for the 50-move rule.
-    halfmove_clock: u8,
-    /// Full-move counter.
-    ///
-    /// A full-move consists of two half-moves, one by white and one by black. This counts the total
-    /// number of moves since the game began. It starts at 1 and increments after black's move.
-    fullmove_counter: u8,
+    /// Color masks.
+    color_bb: [BitBoard; Color::COUNT],
+    /// Piece masks.
+    piece_bb: [BitBoard; PieceKind::COUNT],
+}
+
+impl Board {
+    /// Get the color at a certain square.
+    pub fn get_color(&self, square: Square) -> Option<Color> {
+        self.color_bb.iter().enumerate().find_map(|(n, bb)| {
+            if bb.get(square) {
+                Color::from_repr(n as u8)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get the piece type at a certain square.
+    pub fn get_piece_kind(&self, square: Square) -> Option<PieceKind> {
+        self.piece_bb.iter().enumerate().find_map(|(n, bb)| {
+            if bb.get(square) {
+                PieceKind::from_repr(n as u8)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get the piece at a certain square.
+    pub fn get(&self, square: Square) -> Option<Piece> {
+        let (color, kind) = self.get_color(square).zip(self.get_piece_kind(square))?;
+        Some(Piece { color, kind })
+    }
+
+    /// Get the bitboard associated with a certain piece.
+    #[inline]
+    pub fn get_bb(&self, piece: Piece) -> BitBoard {
+        self.piece_bb[piece.kind as u8 as usize] & self.color_bb[piece.color as u8 as usize]
+    }
+
+    /// Get the bitboard associated with a certain piece kind.
+    #[inline]
+    pub const fn get_piece_bb(&self, piece: PieceKind) -> BitBoard {
+        self.piece_bb[piece as u8 as usize]
+    }
+
+    /// Get an exclusive reference to the bitboard associated with a certain piece kind.
+    #[inline]
+    pub fn get_piece_bb_mut(&mut self, piece: PieceKind) -> &mut BitBoard {
+        &mut self.piece_bb[piece as u8 as usize]
+    }
+
+    /// Get the bitboard associated with a certain color.
+    #[inline]
+    pub const fn get_color_bb(&self, color: Color) -> BitBoard {
+        self.color_bb[color as u8 as usize]
+    }
+
+    /// Get an exclusive reference to the bitboard associated with a certain color.
+    #[inline]
+    pub fn get_color_bb_mut(&mut self, color: Color) -> &mut BitBoard {
+        &mut self.color_bb[color as u8 as usize]
+    }
+
+    /// Set a piece on the board.
+    pub fn set(&mut self, square: Square, piece: Option<Piece>) {
+        match piece {
+            Some(piece) => {
+                self.get_color_bb_mut(piece.color).set(square, true);
+                self.get_piece_bb_mut(piece.kind).set(square, true);
+            }
+            None => {
+                // should be vectorized hopefully
+                for bb in &mut self.color_bb {
+                    bb.set(square, false);
+                }
+                for bb in &mut self.piece_bb {
+                    bb.set(square, false);
+                }
+            }
+        }
+    }
+}
+
+impl Display for Board {
+    // not pretty but works
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, " a  b  c  d  e  f  g  h")?;
+        let mut square = Square::at(7, 0).unwrap();
+
+        for _ in 0..8 {
+            for _ in 0..8 {
+                if let Some(piece) = self.get(square) {
+                    write!(f, " {} ", piece.as_char())?;
+                } else {
+                    write!(f, "   ")?;
+                }
+
+                square.0 += 1;
+            }
+
+            writeln!(f)?;
+            square.0 = square.0.saturating_sub(16);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

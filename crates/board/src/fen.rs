@@ -1,6 +1,6 @@
 //! Fen parser implementation.
 //!
-//! https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation
+//! <https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation>
 
 use std::str::FromStr;
 
@@ -14,8 +14,8 @@ use nom::IResult;
 
 use crate::{Board, CastlingRights, Color, Piece, Position, Square};
 
-fn parse_position(mut input: &str) -> IResult<&str, Position> {
-    let mut position = Position::empty();
+fn parse_board(mut input: &str) -> IResult<&str, Board> {
+    let mut board = Board::default();
     let mut square = Square::at(7, 0).unwrap();
 
     for _ in 0..8 {
@@ -29,7 +29,7 @@ fn parse_position(mut input: &str) -> IResult<&str, Position> {
                 continue;
             }
 
-            let _ = position.set(square, Piece::from_char(char));
+            board.set(square, Piece::from_char(char));
             square.0 += 1;
         }
 
@@ -37,7 +37,7 @@ fn parse_position(mut input: &str) -> IResult<&str, Position> {
         square.0 = square.0.saturating_sub(16);
     }
 
-    Ok((input, position))
+    Ok((input, board))
 }
 
 fn parse_active_color(input: &str) -> IResult<&str, Color> {
@@ -89,12 +89,12 @@ fn parse_u8(input: &str) -> IResult<&str, u8> {
 }
 
 /// Parse a chessboard state from the provided FEN string.
-pub fn parse(input: &str) -> IResult<&str, Board> {
+pub fn parse(input: &str) -> IResult<&str, Position> {
     let (
         input,
         (
             _,
-            position,
+            board,
             _,
             active_color,
             _,
@@ -108,7 +108,7 @@ pub fn parse(input: &str) -> IResult<&str, Board> {
         ),
     ) = (
         space0,
-        parse_position,
+        parse_board,
         space1,
         parse_active_color,
         space1,
@@ -124,8 +124,8 @@ pub fn parse(input: &str) -> IResult<&str, Board> {
 
     Ok((
         input,
-        Board {
-            position,
+        Position {
+            board,
             active_color,
             castling,
             ep_target,
