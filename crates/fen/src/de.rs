@@ -134,3 +134,27 @@ pub fn parse(input: &str) -> IResult<&str, Position> {
         },
     ))
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn starting_pos() {
+        let position = parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .unwrap()
+            .1;
+
+        assert_eq!(
+            position,
+            Position {
+                board: Board::starting_position(),
+                active_color: Color::White,
+                castling: CastlingRights::all(),
+                ep_target: None,
+                halfmove_clock: 0,
+                fullmove_counter: 1,
+            }
+        )
+    }
+}

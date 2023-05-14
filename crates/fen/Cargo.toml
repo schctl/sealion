@@ -9,3 +9,12 @@ authors = { workspace = true }
 [dependencies]
 nom = "7"
 sealion_board = { workspace = true }
+
+# -- Benchmarking --
+
+[dev-dependencies]
+criterion = "0.4"
+
+[[bench]]
+name = "de"
+harness = false

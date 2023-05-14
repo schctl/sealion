@@ -25,7 +25,7 @@ use crate::Square;
     Shr,
     ShrAssign,
 )]
-pub struct BitBoard(u64);
+pub struct BitBoard(pub u64);
 
 impl BitBoard {
     /// Get the value at this position.

@@ -183,6 +183,27 @@ impl Board {
             }
         }
     }
+
+    /// Generate the starting board position.
+    #[rustfmt::skip]
+    pub const fn starting_position() -> Self {
+        let mut this = Self {
+            color_bb: [BitBoard(0); Color::COUNT],
+            piece_bb: [BitBoard(0); PieceKind::COUNT],
+        };
+
+        this.color_bb[Color::White as u8 as usize] = BitBoard(0x00_00_00_00_00_00_FF_FF);
+        this.color_bb[Color::Black as u8 as usize] = BitBoard(0xFF_FF_00_00_00_00_00_00);
+
+        this.piece_bb[PieceKind::Pawn   as u8 as usize] = BitBoard(0x00_FF_00_00_00_00_FF_00);
+        this.piece_bb[PieceKind::Knight as u8 as usize] = BitBoard(0x42_00_00_00_00_00_00_42);
+        this.piece_bb[PieceKind::Bishop as u8 as usize] = BitBoard(0x24_00_00_00_00_00_00_24);
+        this.piece_bb[PieceKind::Rook   as u8 as usize] = BitBoard(0x81_00_00_00_00_00_00_81);
+        this.piece_bb[PieceKind::Queen  as u8 as usize] = BitBoard(0x08_00_00_00_00_00_00_08);
+        this.piece_bb[PieceKind::King   as u8 as usize] = BitBoard(0x10_00_00_00_00_00_00_10);
+
+        this
+    }
 }
 
 impl Display for Board {
