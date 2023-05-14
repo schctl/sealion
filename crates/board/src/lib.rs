@@ -4,7 +4,6 @@ use std::str::FromStr;
 use strum::EnumCount;
 
 pub mod bitboard;
-pub mod fen;
 pub mod piece;
 pub mod position;
 
@@ -15,7 +14,7 @@ pub use position::*;
 /// A position on the board.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Square(pub(crate) u8);
+pub struct Square(u8);
 
 impl Square {
     /// The square at a particular rank and file.
@@ -38,6 +37,20 @@ impl Square {
     #[inline]
     pub const fn file(&self) -> u8 {
         self.0 % 8
+    }
+
+    /// Get the internal index representation of this square.
+    #[inline]
+    pub const fn raw_index(&self) -> u8 {
+        self.0
+    }
+
+    /// Get the internal index representation of this square.
+    ///
+    /// Be careful while modifying this since it could invalidate the square position.
+    #[inline]
+    pub fn raw_index_mut(&mut self) -> &mut u8 {
+        &mut self.0
     }
 }
 

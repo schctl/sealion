@@ -1,5 +1,5 @@
 [package]
-name = "sealion_board"
+name = "sealion_fen"
 edition = { workspace = true }
 version = { workspace = true }
 publish = { workspace = true }
@@ -7,8 +7,5 @@ license = { workspace = true }
 authors = { workspace = true }
 
 [dependencies]
-bitflags = "1"
-
-# Macros
-derive_more = { version = "0.99", features = ["add", "mul"] }
-strum = { version = "0.24", features = ["derive"] }
+nom = "7"
+sealion_board = { workspace = true }

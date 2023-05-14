@@ -12,7 +12,7 @@ use nom::multi::{many0, many1};
 use nom::sequence::Tuple;
 use nom::IResult;
 
-use crate::{Board, CastlingRights, Color, Piece, Position, Square};
+use sealion_board::{Board, CastlingRights, Color, Piece, Position, Square};
 
 fn parse_board(mut input: &str) -> IResult<&str, Board> {
     let mut board = Board::default();
@@ -25,16 +25,16 @@ fn parse_board(mut input: &str) -> IResult<&str, Board> {
         for char in rank.chars() {
             // FIXME: add some checks to increment square index
             if is_digit(char as u8) {
-                square.0 += (char as u8).saturating_sub(b'0');
+                *square.raw_index_mut() += (char as u8).saturating_sub(b'0');
                 continue;
             }
 
             board.set(square, Piece::from_char(char));
-            square.0 += 1;
+            *square.raw_index_mut() += 1;
         }
 
         input = new_input;
-        square.0 = square.0.saturating_sub(16);
+        *square.raw_index_mut() = square.raw_index().saturating_sub(16);
     }
 
     Ok((input, board))
