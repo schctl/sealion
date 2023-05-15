@@ -38,3 +38,16 @@ pub struct Position {
     /// number of moves since the game began. It starts at 1 and increments after black's move.
     pub fullmove_counter: u8,
 }
+
+impl Position {
+    pub fn starting() -> Self {
+        Position {
+            board: Board::starting_position(),
+            active_color: Color::White,
+            castling: CastlingRights::all(),
+            ep_target: None,
+            halfmove_clock: 0,
+            fullmove_counter: 1,
+        }
+    }
+}

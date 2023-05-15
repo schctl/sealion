@@ -13,6 +13,7 @@ authors = ["Sachin Cherian <sachinctl@protonmail.com>"]
 [workspace.dependencies]
 sealion_board = { path = "crates/board" }
 sealion_fen = { path = "crates/fen" }
+sealion_maven = { path = "crates/maven" }
 
 # --- sealion binary ---
 
@@ -25,7 +26,9 @@ license = { workspace = true }
 authors = { workspace = true }
 
 [dependencies]
+sealion_board = { workspace = true }
 sealion_fen = { workspace = true }
+sealion_maven = { workspace = true }
 
 [profile.release]
 lto = true

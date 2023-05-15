@@ -1,3 +1,8 @@
+//! Chessboard representation.
+//!
+//! Only defines structures that represent the board, does not check the legality of positions
+//! or handle move generation.
+
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -52,6 +57,12 @@ impl Square {
     pub fn raw_index_mut(&mut self) -> &mut u8 {
         &mut self.0
     }
+
+    /// Construct a square from an index skipping any validity checks.
+    #[inline]
+    pub const fn from_index_unchecked(index: u8) -> Self {
+        Self(index)
+    }
 }
 
 impl TryFrom<(u8, u8)> for Square {
@@ -88,12 +99,7 @@ impl FromStr for Square {
 impl Display for Square {
     /// Format the square into algebraic notation.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            (self.rank() + b'a') as char,
-            (self.file() + b'1') as char
-        )
+        write!(f, "{}{}", (self.file() + b'a') as char, self.rank() + 1)
     }
 }
 
