@@ -97,7 +97,7 @@ pub(crate) mod direction {
     }
 }
 
-pub const fn generate_shadow(square: Square, max_iters: i8, shift: i8) -> BitBoard {
+const fn generate_shadow(square: Square, max_iters: i8, shift: i8) -> BitBoard {
     let mut bb = BitBoard(0);
 
     let mut iter = 1;
@@ -124,6 +124,8 @@ const fn generate_shadows(direction: direction::Direction) -> [BitBoard; 64] {
 
     dir_shadows
 }
+
+pub type Shadows = [[BitBoard; 64]; 4];
 
 pub const ORTHOGONAL_SHADOWS: [[BitBoard; 64]; 4] = [
     generate_shadows(Direction::Orthogonal(Orthogonal::North)),

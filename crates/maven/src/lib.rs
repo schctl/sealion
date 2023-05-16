@@ -3,118 +3,70 @@
 #![feature(portable_simd)]
 #![feature(const_trait_impl)]
 
-use std::simd::{u64x8, SimdUint};
+use std::simd::{u64x4, u64x8, SimdUint};
 
 use sealion_board::{BitBoard, Square};
 
 pub mod tables;
-use tables::direction;
 
 /// The primary structure which contains relevant piece state information, such as attacks and checks.
 pub struct Maven {}
 
 impl Maven {
     pub fn bishop_moves(square: Square, friendly: BitBoard, unfriendly: BitBoard) -> BitBoard {
-        let quasi_move_table = [
-            tables::DIAGONAL_SHADOWS[0][square.raw_index() as usize],
-            tables::DIAGONAL_SHADOWS[1][square.raw_index() as usize],
-            tables::DIAGONAL_SHADOWS[2][square.raw_index() as usize],
-            tables::DIAGONAL_SHADOWS[3][square.raw_index() as usize],
-        ];
+        let mut quasi_move_table = u64x4::splat(0);
 
-        let quasi_moves =
-            quasi_move_table[0] | quasi_move_table[1] | quasi_move_table[2] | quasi_move_table[3];
+        for i in 0..4 {
+            quasi_move_table[i] = tables::DIAGONAL_SHADOWS[i][square.raw_index() as usize].0;
+        }
+
+        let quasi_moves = BitBoard(quasi_move_table.reduce_or());
 
         // friendly blockers
-        let all_blockers = quasi_moves & (friendly | unfriendly);
+        let all_blockers = quasi_move_table & u64x4::splat((friendly | unfriendly).0);
         let our_blockers = quasi_moves & friendly;
 
-        let shadow = Self::diagonal_shadow_or(&quasi_move_table, all_blockers) | our_blockers;
+        let shadow = Self::diagonal_shadow_or(all_blockers) | our_blockers;
 
         quasi_moves ^ shadow
     }
 
     /// Generate diagonal shadow across only one direction.
-    fn diagonal_shadow_or(move_tables: &[BitBoard; 4], blockers: BitBoard) -> BitBoard {
-        use direction::Diagonal;
+    pub fn diagonal_shadow_or(blockers: u64x4) -> BitBoard {
+        let mut shadow = u64x8::splat(0);
 
-        let mut shadow = [u64x8::splat(0); 4];
-
-        for index in (0..64).step_by(8) {
-            let square = 1 << index;
-
-            shadow[0] |= shadow_or_mask_simd(
-                move_tables[Diagonal::NorthEast as u8 as usize],
-                Diagonal::NorthEast,
-                blockers,
-                index,
-                square,
-            );
-            shadow[1] |= shadow_or_mask_simd(
-                move_tables[Diagonal::NorthWest as u8 as usize],
-                Diagonal::NorthWest,
-                blockers,
-                index,
-                square,
-            );
-            shadow[2] |= shadow_or_mask_simd(
-                move_tables[Diagonal::SouthEast as u8 as usize],
-                Diagonal::SouthEast,
-                blockers,
-                index,
-                square,
-            );
-            shadow[3] |= shadow_or_mask_simd(
-                move_tables[Diagonal::SouthWest as u8 as usize],
-                Diagonal::SouthWest,
-                blockers,
-                index,
-                square,
-            );
+        for index in 0..8 {
+            shadow[index] = chunk_diagonal_shadow_mask(blockers, index * 8);
         }
 
-        BitBoard(
-            shadow[0].reduce_or()
-                | shadow[1].reduce_or()
-                | shadow[2].reduce_or()
-                | shadow[3].reduce_or(),
-        )
+        BitBoard(shadow.reduce_or())
     }
 }
 
-const fn shadow_or_mask(
-    move_table: BitBoard,
-    direction: direction::Diagonal,
-    blockers: BitBoard,
-    index: usize,
-    square: u64,
-) -> u64 {
+pub fn partial_diagonal_shadow_mask(direction: usize, blockers: u64, index: usize) -> u64 {
     // check if the current square
     // 1) blocks movement (contains a piece)
     // 2) is only in the direction of movement
-    let valid_shadow = square & blockers.0 & move_table.0 > 0;
+    let valid_shadow = (blockers >> index) & 1;
 
-    tables::DIAGONAL_SHADOWS[direction as u8 as usize][index].0
-        & !(valid_shadow as u64).wrapping_sub(1)
+    tables::DIAGONAL_SHADOWS[direction][index].0 & !(valid_shadow.wrapping_sub(1))
 }
 
-const fn shadow_or_mask_simd(
-    move_table: BitBoard,
-    direction: direction::Diagonal,
-    blockers: BitBoard,
-    index: usize,
-    square: u64,
-) -> u64x8 {
-    u64x8::from_array([
-        shadow_or_mask(move_table, direction, blockers, index, square),
-        shadow_or_mask(move_table, direction, blockers, index + 1, square << 1),
-        shadow_or_mask(move_table, direction, blockers, index + 2, square << 2),
-        shadow_or_mask(move_table, direction, blockers, index + 3, square << 3),
-        shadow_or_mask(move_table, direction, blockers, index + 4, square << 4),
-        shadow_or_mask(move_table, direction, blockers, index + 5, square << 5),
-        shadow_or_mask(move_table, direction, blockers, index + 6, square << 6),
-        shadow_or_mask(move_table, direction, blockers, index + 7, square << 7),
-    ])
+pub fn chunk_partial_diagonal_shadow_mask(direction: usize, blockers: u64, index: usize) -> u64 {
+    let mut mask = u64x8::splat(0);
+
+    for shift in 0..8 {
+        mask[shift] = partial_diagonal_shadow_mask(direction, blockers, index + shift);
+    }
+
+    mask.reduce_or()
+}
+
+pub fn chunk_diagonal_shadow_mask(blockers: u64x4, index: usize) -> u64 {
+    chunk_partial_diagonal_shadow_mask(0, blockers[0], index) |
+    chunk_partial_diagonal_shadow_mask(1, blockers[1], index) |
+    chunk_partial_diagonal_shadow_mask(2, blockers[2], index) |
+    chunk_partial_diagonal_shadow_mask(3, blockers[3], index)
 }
 
 #[cfg(test)]
