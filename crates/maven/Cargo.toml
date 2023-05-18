@@ -15,5 +15,5 @@ sealion_board = { workspace = true }
 criterion = "0.4"
 
 [[bench]]
-name = "bishop"
+name = "movegen"
 harness = false

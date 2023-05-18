@@ -3,8 +3,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use sealion_board::{Position, Square};
 use sealion_maven::Maven;
 
-pub fn benchmark_bishop(c: &mut Criterion) {
-    c.bench_function("Bench Generate Bishop Moves", |b| {
+pub fn benchmark_sliders(c: &mut Criterion) {
+    c.bench_function("Sliding Move", |b| {
         let start = Position::starting();
         let sq = Square::at(4, 5).unwrap();
 
@@ -18,5 +18,5 @@ pub fn benchmark_bishop(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, benchmark_bishop);
+criterion_group!(benches, benchmark_sliders);
 criterion_main!(benches);
