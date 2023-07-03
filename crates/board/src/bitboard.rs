@@ -54,6 +54,12 @@ impl BitBoard {
     pub const fn is_empty(&self) -> bool {
         self.0 == 0
     }
+
+    /// A bitboard with one square set to 1.
+    #[inline]
+    pub const fn from_square(square: Square) -> Self {
+        Self(1 << square.raw_index())
+    }
 }
 
 impl PartialEq<u64> for BitBoard {

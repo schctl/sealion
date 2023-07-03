@@ -84,13 +84,13 @@ impl FromStr for Square {
             return Err(());
         }
 
-        let rank = s.as_bytes()[0];
-        let rank = rank
-            .overflowing_sub(if rank > b'H' { b'a' } else { b'A' })
+        let file = s.as_bytes()[0];
+        let file = file
+            .overflowing_sub(if file > b'H' { b'a' } else { b'A' })
             .0;
 
-        let file = s.as_bytes()[1];
-        let file = file.overflowing_sub(b'1').0;
+        let rank = s.as_bytes()[1];
+        let rank = rank.overflowing_sub(b'1').0;
 
         Self::try_from((rank, file))
     }
@@ -171,6 +171,12 @@ impl Board {
         &mut self.color_bb[color as u8 as usize]
     }
 
+    /// Get the full board.
+    #[inline]
+    pub fn get_full_bb(&self) -> BitBoard {
+        self.color_bb[0] | self.color_bb[1]
+    }
+
     /// Set a piece on the board.
     pub fn set(&mut self, square: Square, piece: Option<Piece>) {
         match piece {
@@ -223,7 +229,7 @@ impl Display for Board {
                 if let Some(piece) = self.get(square) {
                     write!(f, " {} ", piece.as_char())?;
                 } else {
-                    write!(f, "   ")?;
+                    write!(f, " _ ")?;
                 }
 
                 square.0 += 1;
@@ -244,17 +250,18 @@ mod square_tests {
     #[test]
     fn square_to_str() {
         assert_eq!(&Square::at(0, 0).unwrap().to_string(), "a1");
-        assert_eq!(&Square::at(5, 7).unwrap().to_string(), "f8");
-        assert_eq!(&Square::at(4, 3).unwrap().to_string(), "e4");
-        assert_eq!(&Square::at(2, 6).unwrap().to_string(), "c7");
+        assert_eq!(&Square::at(7, 5).unwrap().to_string(), "f8");
+        assert_eq!(&Square::at(3, 4).unwrap().to_string(), "e4");
+        assert_eq!(&Square::at(6, 2).unwrap().to_string(), "c7");
         assert_eq!(&Square::at(8, 8), &None);
     }
 
     #[test]
     fn square_from_str() {
-        assert_eq!(Square::from_str("a2"), Square::at(0, 1).ok_or(()));
+        assert_eq!(Square::from_str("a2"), Square::at(1, 0).ok_or(()));
         assert_eq!(Square::from_str("h8"), Square::at(7, 7).ok_or(()));
-        assert_eq!(Square::from_str("C5"), Square::at(2, 4).ok_or(()));
+        assert_eq!(Square::from_str("C5"), Square::at(4, 2).ok_or(()));
+        assert_eq!(Square::from_str("e6"), Square::at(5, 4).ok_or(()));
         assert!(Square::from_str("5c").is_err());
         assert!(Square::from_str("b-").is_err());
         assert!(Square::from_str("^8").is_err());

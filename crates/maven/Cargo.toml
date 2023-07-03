@@ -13,6 +13,7 @@ sealion_board = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.4"
+sealion_fen = { workspace = true }
 
 [[bench]]
 name = "movegen"
