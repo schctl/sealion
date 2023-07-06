@@ -8,6 +8,7 @@ authors = { workspace = true }
 
 [dependencies]
 sealion_board = { workspace = true }
+smallvec = "1"
 
 # -- Benchmarking --
 

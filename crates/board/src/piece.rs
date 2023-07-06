@@ -45,6 +45,22 @@ pub enum PieceKind {
     King,
 }
 
+impl PieceKind {
+    /// Standard notation for this piece kind.
+    #[inline]
+    #[rustfmt::skip]
+    pub const fn as_char(&self) -> char {
+        match self {
+            PieceKind::Pawn   => 'P',
+            PieceKind::Knight => 'N',
+            PieceKind::Bishop => 'B',
+            PieceKind::Rook   => 'R',
+            PieceKind::Queen  => 'Q',
+            PieceKind::King   => 'K',
+        }
+    }
+}
+
 /// Piece belonging to a side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Piece {

@@ -1,12 +1,22 @@
-use sealion_board::{Position, Square};
-use sealion_maven::Maven;
+use std::io::stdin;
+
+use sealion_maven::MoveList;
 
 fn main() {
-    let start = Position::starting();
-    let sq = Square::at(4, 5).unwrap();
+    println!("Position fen: ");
+    let mut fen = String::new();
+    stdin().read_line(&mut fen).unwrap();
 
-    let result = Maven::bishop_moves(sq, &start);
+    let position = sealion_fen::de::parse(&fen).unwrap().1;
 
-    assert_eq!(result, 0x88_50_00_50_88_00_00);
-    println!("{result}");
+    match MoveList::generate(&position) {
+        MoveList::Checkmate => println!("Checkmate"),
+        MoveList::Stalemate => println!("Stalemate"),
+        MoveList::Moves(moves) => {
+            for p_move in &moves {
+                println!("{p_move}")
+            }
+            println!("{} legal moves", moves.len());
+        }
+    }
 }

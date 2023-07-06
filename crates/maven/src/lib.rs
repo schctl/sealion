@@ -2,26 +2,289 @@
 //!
 //! Why is it called Maven? I dunno. It sounds better than "movegen" tho.
 
-#![feature(const_trait_impl)]
-
 use std::cmp::min;
 
-use sealion_board::{BitBoard, Color, Position, Square};
+use sealion_board::{BitBoard, CastlingRights, Color, Move, PieceKind, Position, Square};
+use smallvec::SmallVec;
 
 /// The primary structure which contains relevant piece state information, such as attacks and checks.
-pub struct Maven {}
+pub enum MoveList {
+    Moves(Vec<Move>),
+    Checkmate,
+    Stalemate,
+}
 
-impl Maven {
-    pub fn bishop_moves(square: Square, position: &Position) -> BitBoard {
+impl MoveList {
+    pub fn generate(position: &Position) -> Self {
+        let opponent_moves = OpponentMoves::generate(position);
+
+        let move_bbs = Self::generate_impl(position, &opponent_moves);
+
+        if move_bbs.is_empty() {
+            if opponent_moves.attacks & opponent_moves.friendly_king != 0 {
+                return Self::Checkmate;
+            }
+            return Self::Stalemate;
+        }
+
+        Self::Moves(move_bbs)
+    }
+
+    fn generate_impl(position: &Position, o_moves: &OpponentMoves) -> Vec<Move> {
+        let mut moves = Vec::with_capacity(64);
+
+        // initial king move generation
+        let king_sq = o_moves.friendly_king.to_square_unchecked();
+        let king_moves = Self::pseudo_king_moves(king_sq, position) & !o_moves.attacks;
+
+        for to_square in king_moves.set_iter() {
+            let p_move = Move {
+                from: king_sq,
+                to: to_square,
+                piece_kind: PieceKind::King,
+                promotion: None,
+            };
+
+            moves.push(p_move);
+        }
+
+        // Double check
+        // - Forced king move
+        if o_moves.checkers.melee.len() + o_moves.checkers.sliders.len() > 1 {
+            return moves;
+        }
+
+        let mut restricted = BitBoard(u64::MAX);
+
+        // Melee check
+        // - Checker can be captured
+        // ~ King move to non-attacked square
+        if let Some(checker) = o_moves.checkers.melee.get(0) {
+            restricted = BitBoard::from_square(checker.0);
+        }
+
+        // Sliding check
+        // - Checker can be captured
+        // - Checker can be blocked along attack-ray
+        // ~ King move to non-attacked square
+        if let Some(checker) = o_moves.checkers.sliders.get(0) {
+            restricted = BitBoard::from_square(checker.0) | checker.1;
+        }
+
+        // Generate other piece moves
+        let friendly = position.board.get_color_bb(position.active_color);
+
+        for square in friendly.set_iter() {
+            let square_bb = BitBoard::from_square(square);
+
+            let mut p_moves = BitBoard(0);
+            let mut piece_kind = PieceKind::Pawn;
+            let mut promotable = BitBoard(0);
+
+            // Bishop
+            if square_bb & position.board.get_piece_bb(PieceKind::Bishop) != 0 {
+                p_moves = MoveList::pseudo_bishop_moves(square, position);
+                piece_kind = PieceKind::Bishop;
+                // Rook
+            } else if square_bb & position.board.get_piece_bb(PieceKind::Rook) != 0 {
+                p_moves = MoveList::pseudo_rook_moves(square, position);
+                piece_kind = PieceKind::Rook;
+                // Queen
+            } else if square_bb & position.board.get_piece_bb(PieceKind::Queen) != 0 {
+                // bishop moves first
+                p_moves = MoveList::pseudo_bishop_moves(square, position)
+                    | MoveList::pseudo_rook_moves(square, position);
+                piece_kind = PieceKind::Queen;
+                // Knight
+            } else if square_bb & position.board.get_piece_bb(PieceKind::Knight) != 0 {
+                p_moves = MoveList::pseudo_knight_moves(square, position);
+                piece_kind = PieceKind::Knight;
+                // Pawn
+            } else if square_bb & position.board.get_piece_bb(PieceKind::Pawn) != 0 {
+                let pawn_moves = MoveList::pseudo_pawn_moves(square, position);
+                p_moves = pawn_moves.pushes | pawn_moves.attacks;
+                promotable = pawn_moves.promotions;
+            }
+
+            // Resolve legal move bitboards into individual moves
+            let legal_moves = p_moves & restricted;
+
+            for to_square in legal_moves.set_iter() {
+                let p_move = Move {
+                    from: square,
+                    to: to_square,
+                    piece_kind,
+                    promotion: None,
+                };
+
+                moves.push(p_move);
+            }
+
+            // Resolve promotion bitboards into individual moves
+            let promotable = promotable & restricted;
+
+            for to_square in promotable.set_iter() {
+                for promote_to in [
+                    PieceKind::Knight,
+                    PieceKind::Bishop,
+                    PieceKind::Rook,
+                    PieceKind::Queen,
+                ] {
+                    let p_move = Move {
+                        from: square,
+                        to: to_square,
+                        piece_kind,
+                        promotion: Some(promote_to),
+                    };
+
+                    moves.push(p_move);
+                }
+            }
+        }
+
+        // Castling moves
+        let castling = Self::castling_moves(king_sq, position, o_moves.attacks);
+        moves.extend(castling);
+
+        moves
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct Checkers {
+    /// Nearby attackers.
+    ///
+    /// Have to be captured or evaded by king.
+    melee: SmallVec<[(Square, BitBoard); 4]>,
+    /// Faraway attackers.
+    ///
+    /// Have to be captured, evaded or blocked.
+    sliders: SmallVec<[(Square, BitBoard); 4]>,
+}
+
+/// Pseudo moves for the opponent. Used to calculate checks and pins.
+#[derive(Debug, Clone, Default)]
+pub struct OpponentMoves {
+    /// All attacked squares.
+    attacks: BitBoard,
+    /// Attackers on our king.
+    checkers: Checkers,
+    /// Sliders pinning pieces to the king.
+    pinners: SmallVec<[(Square, BitBoard); 4]>,
+    /// Friendly king square.
+    friendly_king: BitBoard,
+}
+
+impl OpponentMoves {
+    pub fn generate(position: &Position) -> Self {
+        let mut this = Self::default();
+
+        this.friendly_king = position.board.get_color_bb(position.active_color)
+            & position.board.get_piece_bb(PieceKind::King);
+
+        let mut pos_opp = position.clone();
+        pos_opp.active_color = pos_opp.active_color.opposite();
+        pos_opp.ep_target = None;
+
+        let friendly = pos_opp.board.get_color_bb(pos_opp.active_color);
+        let unfriendly = pos_opp.board.get_color_bb(pos_opp.active_color.opposite());
+
+        for square in friendly.set_iter() {
+            let square_bb = BitBoard::from_square(square);
+
+            // Check handlers
+            let mut handle_sliding_checker = |pinner: [BitBoard; 4]| {
+                for ray in pinner {
+                    if ray & this.friendly_king != 0 {
+                        let intersect = (ray & unfriendly).0.count_ones();
+
+                        if intersect == 1 {
+                            // only king intersects - check
+                            this.checkers.sliders.push((square, ray));
+                        } else if intersect == 2 {
+                            // king and one more piece intersect - pin
+                            this.pinners.push((square, ray));
+                        }
+                    }
+                }
+            };
+
+            let mut handle_melee_checker = |melee| {
+                if melee & this.friendly_king != 0 {
+                    this.checkers.melee.push((square, melee));
+                }
+            };
+
+            // Generate moves
+
+            // Bishop
+            if square_bb & pos_opp.board.get_piece_bb(PieceKind::Bishop) != 0 {
+                let slider = MoveList::sliding_attacks::<0>(square, friendly | unfriendly);
+                let pinner = MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
+
+                (handle_sliding_checker)(pinner);
+
+                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+            // Rook
+            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Rook) != 0 {
+                let slider = MoveList::sliding_attacks::<1>(square, friendly | unfriendly);
+                let pinner = MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
+
+                (handle_sliding_checker)(pinner);
+
+                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+            // Queen
+            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Queen) != 0 {
+                // bishop moves first
+                let slider = MoveList::sliding_attacks::<0>(square, friendly | unfriendly);
+                let pinner = MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
+
+                (handle_sliding_checker)(pinner);
+
+                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+
+                // rook moves
+                let slider = MoveList::sliding_attacks::<1>(square, friendly | unfriendly);
+                let pinner = MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
+
+                (handle_sliding_checker)(pinner);
+
+                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+            // Knight
+            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Knight) != 0 {
+                let melee = MoveList::knight_attacks(square);
+
+                (handle_melee_checker)(melee);
+
+                this.attacks |= melee;
+            // Pawn
+            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Pawn) != 0 {
+                let melee = MoveList::pawn_attacks(square, pos_opp.active_color);
+
+                (handle_melee_checker)(melee);
+
+                this.attacks |= melee;
+            // King
+            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::King) != 0 {
+                let melee = MoveList::king_attacks(square);
+                // king can't check another king
+                this.attacks |= melee;
+            }
+        }
+
+        this
+    }
+}
+
+impl MoveList {
+    #[inline]
+    pub fn pseudo_bishop_moves(square: Square, position: &Position) -> BitBoard {
         Self::sliding_moves::<0>(square, position)
     }
 
-    pub fn rook_moves(square: Square, position: &Position) -> BitBoard {
+    #[inline]
+    pub fn pseudo_rook_moves(square: Square, position: &Position) -> BitBoard {
         Self::sliding_moves::<1>(square, position)
-    }
-
-    pub fn queen_moves(square: Square, position: &Position) -> BitBoard {
-        Self::sliding_moves::<0>(square, position) | Self::sliding_moves::<1>(square, position)
     }
 
     fn sliding_moves<const DIR: u8>(square: Square, position: &Position) -> BitBoard {
@@ -30,16 +293,12 @@ impl Maven {
             .board
             .get_color_bb(position.active_color.opposite());
 
-        let moves = Self::sliding_moves_impl::<DIR>(square, friendly, unfriendly);
+        let attacks = Self::sliding_attacks::<DIR>(square, friendly | unfriendly);
 
-        moves[0] | moves[1] | moves[2] | moves[3]
+        (attacks[0] | attacks[1] | attacks[2] | attacks[3]) & !friendly
     }
 
-    fn sliding_moves_impl<const DIR: u8>(
-        square: Square,
-        friendly: BitBoard,
-        unfriendly: BitBoard,
-    ) -> [BitBoard; 4] {
+    fn sliding_attacks<const DIR: u8>(square: Square, blockers: BitBoard) -> [BitBoard; 4] {
         let mut moves = [BitBoard(0); 4];
 
         let (max, shifts) = match DIR {
@@ -65,7 +324,7 @@ impl Maven {
 
                 (max, [[8, 0, 1, 0], [0, 8, 0, 1]])
             }
-            _ => panic!("disallowed value for sliding move direction (should be 1 or 0)"),
+            _ => panic!("disallowed value for sliding attack direction (should be 1 or 0)"),
         };
 
         let square = BitBoard::from_square(square);
@@ -77,13 +336,9 @@ impl Maven {
                 square <<= shifts[0][direction];
                 square >>= shifts[1][direction];
 
-                if square & friendly != 0 {
-                    break;
-                }
-
                 moves[direction] |= square;
 
-                if square & unfriendly != 0 {
+                if square & blockers != 0 {
                     break;
                 }
             }
@@ -93,7 +348,7 @@ impl Maven {
     }
 
     /// Pre-calculated knight move table for each position on the board.
-    const KNIGHT_MOVES: [BitBoard; 64] = {
+    const KNIGHT_ATTACKS: [BitBoard; 64] = {
         let mut all_moves = [BitBoard(0); 64];
 
         let mut i = 0;
@@ -138,45 +393,83 @@ impl Maven {
         all_moves
     };
 
-    pub fn knight_moves(square: Square, position: &Position) -> BitBoard {
-        let moves = Self::KNIGHT_MOVES[square.raw_index() as usize];
-        moves & !position.board.get_color_bb(position.active_color)
+    fn knight_attacks(square: Square) -> BitBoard {
+        Self::KNIGHT_ATTACKS[square.raw_index() as usize]
     }
 
-    pub fn pawn_moves(square: Square, position: &Position) -> BitBoard {
-        let mut moves = BitBoard(0);
+    #[inline]
+    pub fn pseudo_knight_moves(square: Square, position: &Position) -> BitBoard {
+        Self::knight_attacks(square) & !position.board.get_color_bb(position.active_color)
+    }
 
+    fn pawn_attacks(square: Square, color: Color) -> BitBoard {
+        let mut moves = BitBoard(0);
         let start = BitBoard::from_square(square);
+
+        match color {
+            Color::White => {
+                if square.rank() < 7 {
+                    if square.file() > 0 {
+                        moves |= start << 7;
+                    }
+                    if square.file() < 7 {
+                        moves |= start << 9;
+                    }
+                }
+            }
+            Color::Black => {
+                if square.rank() > 0 {
+                    if square.file() > 0 {
+                        moves |= start >> 9;
+                    }
+                    if square.file() < 7 {
+                        moves |= start >> 7;
+                    }
+                }
+            }
+        }
+
+        moves
+    }
+
+    pub fn pseudo_pawn_moves(square: Square, position: &Position) -> PawnMoves {
+        let mut moves = PawnMoves::default();
+        let start = BitBoard::from_square(square);
+
+        let attacks = Self::pawn_attacks(square, position.active_color);
+        moves.attacks = attacks
+            & position
+                .board
+                .get_color_bb(position.active_color.opposite());
 
         match position.active_color {
             Color::White => {
-                // single push
                 let next = start << 8;
 
                 if position.board.get_full_bb() & next == 0 {
-                    moves |= next;
+                    // promotion
+                    if square.rank() == 6 {
+                        moves.promotions |= next;
+                    }
+                    // single push
+                    else if square.rank() < 6 {
+                        moves.pushes |= next;
 
-                    // double push
-                    let next = next << 8;
+                        // double push
+                        let next_2 = next << 8;
 
-                    if position.board.get_full_bb() & next == 0 {
-                        moves |= next;
+                        if square.rank() == 1 && position.board.get_full_bb() & next_2 == 0 {
+                            moves.pushes |= next_2;
+                        }
                     }
                 }
-
-                // diagonal capture
-                let diag = (start << 7) | (start << 9);
-                moves |= diag
-                    & position
-                        .board
-                        .get_color_bb(position.active_color.opposite());
 
                 // en passant
                 if let Some(ep_target) = position.ep_target {
                     let offset = ep_target.raw_index().saturating_sub(square.raw_index());
 
                     if offset == 7 || offset == 9 {
-                        moves |= BitBoard::from_square(ep_target);
+                        moves.attacks |= BitBoard::from_square(ep_target);
                     }
                 }
             }
@@ -185,35 +478,207 @@ impl Maven {
                 let next = start >> 8;
 
                 if position.board.get_full_bb() & next == 0 {
-                    moves |= next;
+                    // promotion
+                    if square.rank() == 1 {
+                        moves.promotions |= next;
+                    }
+                    // single push
+                    else if square.rank() > 1 {
+                        moves.pushes |= next;
 
-                    // double push
-                    let next = next >> 8;
+                        // double push
+                        let next_2 = next >> 8;
 
-                    if position.board.get_full_bb() & next == 0 {
-                        moves |= next;
+                        if square.rank() == 6 && position.board.get_full_bb() & next_2 == 0 {
+                            moves.pushes |= next_2;
+                        }
                     }
                 }
-
-                // diagonal capture
-                let diag = (start >> 7) | (start >> 9);
-                moves |= diag
-                    & position
-                        .board
-                        .get_color_bb(position.active_color.opposite());
 
                 // en passant
                 if let Some(ep_target) = position.ep_target {
                     let offset = square.raw_index().saturating_sub(ep_target.raw_index());
 
                     if offset == 7 || offset == 9 {
-                        moves |= BitBoard::from_square(ep_target);
+                        moves.attacks |= BitBoard::from_square(ep_target);
                     }
                 }
             }
         }
 
         moves
+    }
+
+    /// Pre-calculated king move table for each position on the board.
+    const KING_ATTACKS: [BitBoard; 64] = {
+        let mut all_moves = [BitBoard(0); 64];
+
+        let mut i = 0;
+        while i < 64 {
+            let mut moves = 0;
+            let square = Square::from_index_unchecked(i);
+            let start = 1 << i;
+
+            // E
+            if square.file() > 0 {
+                moves |= start >> 9;
+                moves |= start >> 1;
+                moves |= start << 7;
+            }
+            // W
+            if square.file() < 7 {
+                moves |= start >> 7;
+                moves |= start << 1;
+                moves |= start << 9;
+            }
+            // N
+            let mut mask = 0;
+            mask |= start << 7;
+            mask |= start << 8;
+            mask |= start << 9;
+
+            if square.rank() == 7 {
+                moves &= !mask;
+            } else {
+                moves |= mask;
+            }
+            // S
+            mask >>= 16;
+
+            if square.rank() == 0 {
+                moves &= !mask;
+            } else {
+                moves |= mask;
+            }
+
+            all_moves[i as usize] = BitBoard(moves);
+            i += 1;
+        }
+
+        all_moves
+    };
+
+    fn king_attacks(square: Square) -> BitBoard {
+        Self::KING_ATTACKS[square.raw_index() as usize]
+    }
+
+    #[inline]
+    pub fn pseudo_king_moves(square: Square, position: &Position) -> BitBoard {
+        Self::king_attacks(square) & !position.board.get_color_bb(position.active_color)
+    }
+
+    const CASTLING_CHECKS: [CastlingChecks; 4] = {
+        // white
+        let start = 0b1110;
+
+        let mut checks_woo = CastlingChecks::zero();
+        checks_woo.clear = BitBoard(start << 4 & !(1 << 7));
+        checks_woo.safe = BitBoard(start << 3);
+        checks_woo.to_sq = BitBoard(1 << 6).to_square_unchecked();
+
+        let mut checks_wooo = CastlingChecks::zero();
+        checks_wooo.clear = BitBoard(start);
+        checks_wooo.safe = BitBoard(start << 1);
+        checks_wooo.to_sq = BitBoard(1 << 2).to_square_unchecked();
+
+        // black
+        let start = 0b111 << 57;
+
+        let mut checks_boo = CastlingChecks::zero();
+        checks_boo.clear = BitBoard(start << 4 & !(1 << 63));
+        checks_boo.safe = BitBoard(start << 3);
+        checks_boo.to_sq = BitBoard(1 << 58).to_square_unchecked();
+
+        let mut checks_booo = CastlingChecks::zero();
+        checks_booo.clear = BitBoard(start);
+        checks_booo.safe = BitBoard(start << 1);
+        checks_booo.to_sq = BitBoard(1 << 62).to_square_unchecked();
+
+        [checks_woo, checks_wooo, checks_boo, checks_booo]
+    };
+
+    fn castling_moves(
+        king_sq: Square,
+        position: &Position,
+        attacks: BitBoard,
+    ) -> SmallVec<[Move; 2]> {
+        let mut moves = SmallVec::new();
+
+        let friendly = position.board.get_color_bb(position.active_color);
+        let unfriendly = position
+            .board
+            .get_color_bb(position.active_color.opposite());
+
+        let mut do_checks = |checks: CastlingChecks| {
+            if checks.clear & (friendly | unfriendly) == 0 && checks.safe & attacks == 0 {
+                moves.push(Move {
+                    piece_kind: PieceKind::King,
+                    from: king_sq,
+                    to: checks.to_sq,
+                    promotion: None,
+                });
+            }
+        };
+
+        match position.active_color {
+            Color::White => {
+                if position.castling.contains(CastlingRights::WHITE_OO) {
+                    (do_checks)(Self::CASTLING_CHECKS[0]);
+                }
+                if position.castling.contains(CastlingRights::WHITE_OOO) {
+                    (do_checks)(Self::CASTLING_CHECKS[1]);
+                }
+            }
+            Color::Black => {
+                if position.castling.contains(CastlingRights::BLACK_OO) {
+                    (do_checks)(Self::CASTLING_CHECKS[2]);
+                }
+                if position.castling.contains(CastlingRights::BLACK_OOO) {
+                    (do_checks)(Self::CASTLING_CHECKS[3]);
+                }
+            }
+        }
+
+        moves
+    }
+}
+
+/// Secondary checks for a valid castling move.
+#[derive(Debug, Clone, Copy)]
+struct CastlingChecks {
+    /// Squares in between the king and rook are not occupied.
+    clear: BitBoard,
+    /// Castling squares are not under attack.
+    safe: BitBoard,
+    /// Final square.
+    to_sq: Square,
+}
+
+impl CastlingChecks {
+    #[inline]
+    const fn zero() -> Self {
+        Self {
+            clear: BitBoard(0),
+            safe: BitBoard(0),
+            to_sq: Square::from_index_unchecked(0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PawnMoves {
+    /// Possible moves.
+    pushes: BitBoard,
+    /// Squares defended by the pawn.
+    attacks: BitBoard,
+    /// Promotion squares.
+    promotions: BitBoard,
+}
+
+impl PawnMoves {
+    #[inline]
+    pub fn reduce(&self) -> BitBoard {
+        self.pushes | self.attacks | self.promotions
     }
 }
 
@@ -244,45 +709,29 @@ mod test {
 
     #[test]
     fn bishop_moves() {
-        let tests = [
-            MoveTester {
-                name: "start with bishop",
-                sq: (4, 5),
-                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                result: 0x88_50_00_50_88_00_00,
-            },
-            MoveTester {
-                name: "mostly empty bishop pin",
-                sq: (4, 3),
-                fen: "8/1b6/8/3B4/8/5K2/1k6/8 w - - 0 1",
-                result: 0x02_04_00_10_00_00_00,
-            },
-        ];
+        let tests = [MoveTester {
+            name: "start with bishop",
+            sq: (4, 5),
+            fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            result: 0x88_50_00_50_88_00_00,
+        }];
 
         for test in tests {
-            test.do_gen(Maven::bishop_moves);
+            test.do_gen(MoveList::pseudo_bishop_moves);
         }
     }
 
     #[test]
     fn rook_moves() {
-        let tests = [
-            MoveTester {
-                name: "start with bishop",
-                sq: (4, 5),
-                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                result: 0x20_20_df_20_20_00_00,
-            },
-            MoveTester {
-                name: "mostly empty bishop to rook pin",
-                sq: (2, 3),
-                fen: "8/8/8/1b6/8/3R4/1k2K3/8 w - - 0 1",
-                result: 0,
-            },
-        ];
+        let tests = [MoveTester {
+            name: "start with bishop",
+            sq: (4, 5),
+            fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            result: 0x20_20_df_20_20_00_00,
+        }];
 
         for test in tests {
-            test.do_gen(Maven::rook_moves);
+            test.do_gen(MoveList::pseudo_rook_moves);
         }
     }
 
@@ -296,7 +745,7 @@ mod test {
         }];
 
         for test in tests {
-            test.do_gen(Maven::knight_moves);
+            test.do_gen(MoveList::pseudo_knight_moves);
         }
     }
 
@@ -318,7 +767,42 @@ mod test {
         ];
 
         for test in tests {
-            test.do_gen(Maven::pawn_moves);
+            test.do_gen(|x, y| MoveList::pseudo_pawn_moves(x, y).reduce());
+        }
+    }
+
+    #[test]
+    fn king_moves() {
+        let tests = [
+            MoveTester {
+                name: "king middle",
+                sq: (3, 3),
+                fen: "rnbqkbnr/pppppppp/8/8/3K4/8/PPPPPPPP/RNBQ1BNR w kq - 0 1",
+                result: 0x1c_14_1c_00_00,
+            },
+            MoveTester {
+                name: "king side",
+                sq: (4, 0),
+                fen: "rnbqkbnr/pppp1ppp/8/K3p3/1P6/8/PP1PPPPP/RNBQ1BNR w kq - 0 1",
+                result: 0x03_82_01_80_00_00,
+            },
+        ];
+
+        for test in tests {
+            test.do_gen(MoveList::pseudo_king_moves);
+        }
+    }
+
+    #[test]
+    fn full_move_gen() {
+        let position = Position::starting();
+        let moves = MoveList::generate(&position);
+
+        match moves {
+            MoveList::Moves(moves) => {
+                assert_eq!(moves.len(), 20)
+            }
+            _ => panic!("starting position is not mate"),
         }
     }
 }

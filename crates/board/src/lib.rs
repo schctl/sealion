@@ -9,10 +9,12 @@ use std::str::FromStr;
 use strum::EnumCount;
 
 pub mod bitboard;
+pub mod moves;
 pub mod piece;
 pub mod position;
 
 pub use bitboard::*;
+pub use moves::*;
 pub use piece::*;
 pub use position::*;
 
@@ -107,14 +109,14 @@ impl Display for Square {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct Board {
     /// Color masks.
-    color_bb: [BitBoard; Color::COUNT],
+    color_bb: [BitBoard; 2], // Color::COUNT
     /// Piece masks.
-    piece_bb: [BitBoard; PieceKind::COUNT],
+    piece_bb: [BitBoard; 6], // PieceKind::COUNT
 }
 
 impl Board {
     /// Get the color at a certain square.
-    pub fn get_color(&self, square: Square) -> Option<Color> {
+    pub fn get_color_at(&self, square: Square) -> Option<Color> {
         self.color_bb.iter().enumerate().find_map(|(n, bb)| {
             if bb.get(square) {
                 Color::from_repr(n as u8)
@@ -125,7 +127,7 @@ impl Board {
     }
 
     /// Get the piece type at a certain square.
-    pub fn get_piece_kind(&self, square: Square) -> Option<PieceKind> {
+    pub fn get_piece_kind_at(&self, square: Square) -> Option<PieceKind> {
         self.piece_bb.iter().enumerate().find_map(|(n, bb)| {
             if bb.get(square) {
                 PieceKind::from_repr(n as u8)
@@ -137,7 +139,9 @@ impl Board {
 
     /// Get the piece at a certain square.
     pub fn get(&self, square: Square) -> Option<Piece> {
-        let (color, kind) = self.get_color(square).zip(self.get_piece_kind(square))?;
+        let (color, kind) = self
+            .get_color_at(square)
+            .zip(self.get_piece_kind_at(square))?;
         Some(Piece { color, kind })
     }
 

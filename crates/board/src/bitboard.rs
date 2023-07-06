@@ -60,6 +60,18 @@ impl BitBoard {
     pub const fn from_square(square: Square) -> Self {
         Self(1 << square.raw_index())
     }
+
+    /// Try to resolve this bitboard into a singular square.
+    #[inline]
+    pub const fn to_square_unchecked(&self) -> Square {
+        Square::from_index_unchecked(self.0.trailing_zeros() as u8)
+    }
+
+    /// An iterator over all `set` squares on the board.
+    #[inline]
+    pub const fn set_iter(&self) -> SetIter {
+        SetIter { inner: *self }
+    }
 }
 
 impl PartialEq<u64> for BitBoard {
@@ -84,5 +96,42 @@ impl Display for BitBoard {
         }
 
         Ok(())
+    }
+}
+
+/// An iterator over all `set` squares on the board.
+#[must_use]
+#[derive(Debug, Clone)]
+pub struct SetIter {
+    inner: BitBoard,
+}
+
+impl Iterator for SetIter {
+    type Item = Square;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let trailing = self.inner.0.trailing_zeros() as u8;
+
+        if trailing < 64 {
+            let sq = Square::from_index_unchecked(trailing);
+            let sq_bb = BitBoard::from_square(sq);
+            self.inner &= !sq_bb;
+            return Some(sq);
+        }
+
+        None
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let count = self.len();
+        (count, Some(count))
+    }
+}
+
+impl ExactSizeIterator for SetIter {
+    #[inline]
+    fn len(&self) -> usize {
+        self.inner.0.count_ones() as usize
     }
 }
