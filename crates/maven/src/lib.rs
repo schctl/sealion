@@ -2,9 +2,11 @@
 //!
 //! Why is it called Maven? I dunno. It sounds better than "movegen" tho.
 
+#![allow(clippy::comparison_chain)]
+
 use std::cmp::min;
 
-use sealion_board::{BitBoard, CastlingRights, Color, Move, PieceKind, Position, Square};
+use sealion_board::{BitBoard, CastlingRights, Color, Move, Piece, PieceKind, Position, Square};
 use smallvec::SmallVec;
 
 /// The primary structure which contains relevant piece state information, such as attacks and checks.
@@ -18,20 +20,20 @@ impl MoveList {
     pub fn generate(position: &Position) -> Self {
         let opponent_moves = OpponentMoves::generate(position);
 
-        let move_bbs = Self::generate_impl(position, &opponent_moves);
+        let move_list = Self::generate_impl(position, &opponent_moves);
 
-        if move_bbs.is_empty() {
+        if move_list.is_empty() {
             if opponent_moves.attacks & opponent_moves.friendly_king != 0 {
                 return Self::Checkmate;
             }
             return Self::Stalemate;
         }
 
-        Self::Moves(move_bbs)
+        Self::Moves(move_list)
     }
 
     fn generate_impl(position: &Position, o_moves: &OpponentMoves) -> Vec<Move> {
-        let mut moves = Vec::with_capacity(64);
+        let mut moves = Vec::with_capacity(256);
 
         // initial king move generation
         let king_sq = o_moves.friendly_king.to_square_unchecked();
@@ -79,31 +81,50 @@ impl MoveList {
 
             let mut p_moves = BitBoard(0);
             let mut piece_kind = PieceKind::Pawn;
-            let mut promotable = BitBoard(0);
 
             // Bishop
-            if square_bb & position.board.get_piece_bb(PieceKind::Bishop) != 0 {
+            if square_bb & position.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
                 p_moves = MoveList::pseudo_bishop_moves(square, position);
                 piece_kind = PieceKind::Bishop;
                 // Rook
-            } else if square_bb & position.board.get_piece_bb(PieceKind::Rook) != 0 {
+            } else if square_bb & position.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
                 p_moves = MoveList::pseudo_rook_moves(square, position);
                 piece_kind = PieceKind::Rook;
                 // Queen
-            } else if square_bb & position.board.get_piece_bb(PieceKind::Queen) != 0 {
+            } else if square_bb & position.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
                 // bishop moves first
                 p_moves = MoveList::pseudo_bishop_moves(square, position)
                     | MoveList::pseudo_rook_moves(square, position);
                 piece_kind = PieceKind::Queen;
                 // Knight
-            } else if square_bb & position.board.get_piece_bb(PieceKind::Knight) != 0 {
+            } else if square_bb & position.board.get_piece_kind_bb(PieceKind::Knight) != 0 {
                 p_moves = MoveList::pseudo_knight_moves(square, position);
                 piece_kind = PieceKind::Knight;
                 // Pawn
-            } else if square_bb & position.board.get_piece_bb(PieceKind::Pawn) != 0 {
+            } else if square_bb & position.board.get_piece_kind_bb(PieceKind::Pawn) != 0 {
                 let pawn_moves = MoveList::pseudo_pawn_moves(square, position);
                 p_moves = pawn_moves.pushes | pawn_moves.attacks;
-                promotable = pawn_moves.promotions;
+
+                // handle promotions
+                let promotable = pawn_moves.promotions & restricted;
+
+                for to_square in promotable.set_iter() {
+                    for promote_to in [
+                        PieceKind::Knight,
+                        PieceKind::Bishop,
+                        PieceKind::Rook,
+                        PieceKind::Queen,
+                    ] {
+                        let p_move = Move {
+                            from: square,
+                            to: to_square,
+                            piece_kind,
+                            promotion: Some(promote_to),
+                        };
+
+                        moves.push(p_move);
+                    }
+                }
             }
 
             // Resolve legal move bitboards into individual moves
@@ -118,27 +139,6 @@ impl MoveList {
                 };
 
                 moves.push(p_move);
-            }
-
-            // Resolve promotion bitboards into individual moves
-            let promotable = promotable & restricted;
-
-            for to_square in promotable.set_iter() {
-                for promote_to in [
-                    PieceKind::Knight,
-                    PieceKind::Bishop,
-                    PieceKind::Rook,
-                    PieceKind::Queen,
-                ] {
-                    let p_move = Move {
-                        from: square,
-                        to: to_square,
-                        piece_kind,
-                        promotion: Some(promote_to),
-                    };
-
-                    moves.push(p_move);
-                }
             }
         }
 
@@ -179,8 +179,10 @@ impl OpponentMoves {
     pub fn generate(position: &Position) -> Self {
         let mut this = Self::default();
 
-        this.friendly_king = position.board.get_color_bb(position.active_color)
-            & position.board.get_piece_bb(PieceKind::King);
+        this.friendly_king = position.board.get_piece_bb(Piece {
+            color: position.active_color,
+            kind: PieceKind::King,
+        });
 
         let mut pos_opp = position.clone();
         pos_opp.active_color = pos_opp.active_color.opposite();
@@ -218,7 +220,7 @@ impl OpponentMoves {
             // Generate moves
 
             // Bishop
-            if square_bb & pos_opp.board.get_piece_bb(PieceKind::Bishop) != 0 {
+            if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
                 let slider = MoveList::sliding_attacks::<0>(square, friendly | unfriendly);
                 let pinner = MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
 
@@ -226,7 +228,7 @@ impl OpponentMoves {
 
                 this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
             // Rook
-            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Rook) != 0 {
+            } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
                 let slider = MoveList::sliding_attacks::<1>(square, friendly | unfriendly);
                 let pinner = MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
 
@@ -234,7 +236,7 @@ impl OpponentMoves {
 
                 this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
             // Queen
-            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Queen) != 0 {
+            } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
                 // bishop moves first
                 let slider = MoveList::sliding_attacks::<0>(square, friendly | unfriendly);
                 let pinner = MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
@@ -251,21 +253,21 @@ impl OpponentMoves {
 
                 this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
             // Knight
-            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Knight) != 0 {
+            } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Knight) != 0 {
                 let melee = MoveList::knight_attacks(square);
 
                 (handle_melee_checker)(melee);
 
                 this.attacks |= melee;
             // Pawn
-            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::Pawn) != 0 {
+            } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Pawn) != 0 {
                 let melee = MoveList::pawn_attacks(square, pos_opp.active_color);
 
                 (handle_melee_checker)(melee);
 
                 this.attacks |= melee;
             // King
-            } else if square_bb & pos_opp.board.get_piece_bb(PieceKind::King) != 0 {
+            } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::King) != 0 {
                 let melee = MoveList::king_attacks(square);
                 // king can't check another king
                 this.attacks |= melee;
@@ -289,11 +291,9 @@ impl MoveList {
 
     fn sliding_moves<const DIR: u8>(square: Square, position: &Position) -> BitBoard {
         let friendly = position.board.get_color_bb(position.active_color);
-        let unfriendly = position
-            .board
-            .get_color_bb(position.active_color.opposite());
+        let blockers = position.board.get_full_bb();
 
-        let attacks = Self::sliding_attacks::<DIR>(square, friendly | unfriendly);
+        let attacks = Self::sliding_attacks::<DIR>(square, blockers);
 
         (attacks[0] | attacks[1] | attacks[2] | attacks[3]) & !friendly
     }
@@ -442,11 +442,13 @@ impl MoveList {
                 .board
                 .get_color_bb(position.active_color.opposite());
 
+        let blockers = position.board.get_full_bb();
+
         match position.active_color {
             Color::White => {
                 let next = start << 8;
 
-                if position.board.get_full_bb() & next == 0 {
+                if blockers & next == 0 {
                     // promotion
                     if square.rank() == 6 {
                         moves.promotions |= next;
@@ -458,7 +460,7 @@ impl MoveList {
                         // double push
                         let next_2 = next << 8;
 
-                        if square.rank() == 1 && position.board.get_full_bb() & next_2 == 0 {
+                        if square.rank() == 1 && blockers & next_2 == 0 {
                             moves.pushes |= next_2;
                         }
                     }
@@ -477,7 +479,7 @@ impl MoveList {
                 // single push
                 let next = start >> 8;
 
-                if position.board.get_full_bb() & next == 0 {
+                if blockers & next == 0 {
                     // promotion
                     if square.rank() == 1 {
                         moves.promotions |= next;
@@ -489,7 +491,7 @@ impl MoveList {
                         // double push
                         let next_2 = next >> 8;
 
-                        if square.rank() == 6 && position.board.get_full_bb() & next_2 == 0 {
+                        if square.rank() == 6 && blockers & next_2 == 0 {
                             moves.pushes |= next_2;
                         }
                     }
@@ -604,13 +606,10 @@ impl MoveList {
     ) -> SmallVec<[Move; 2]> {
         let mut moves = SmallVec::new();
 
-        let friendly = position.board.get_color_bb(position.active_color);
-        let unfriendly = position
-            .board
-            .get_color_bb(position.active_color.opposite());
+        let blockers = position.board.get_full_bb();
 
         let mut do_checks = |checks: CastlingChecks| {
-            if checks.clear & (friendly | unfriendly) == 0 && checks.safe & attacks == 0 {
+            if checks.clear & blockers == 0 && checks.safe & attacks == 0 {
                 moves.push(Move {
                     piece_kind: PieceKind::King,
                     from: king_sq,

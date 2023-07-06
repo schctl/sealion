@@ -153,7 +153,7 @@ impl Board {
 
     /// Get the bitboard associated with a certain piece kind.
     #[inline]
-    pub const fn get_piece_bb(&self, piece: PieceKind) -> BitBoard {
+    pub const fn get_piece_kind_bb(&self, piece: PieceKind) -> BitBoard {
         self.piece_bb[piece as u8 as usize]
     }
 
@@ -173,6 +173,12 @@ impl Board {
     #[inline]
     pub fn get_color_bb_mut(&mut self, color: Color) -> &mut BitBoard {
         &mut self.color_bb[color as u8 as usize]
+    }
+
+    /// Get the bitboard for a specific piece and color.
+    #[inline]
+    pub fn get_piece_bb(&self, piece: Piece) -> BitBoard {
+        self.get_piece_kind_bb(piece.kind) & self.get_color_bb(piece.color)
     }
 
     /// Get the full board.
