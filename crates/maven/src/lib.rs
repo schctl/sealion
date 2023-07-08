@@ -3,15 +3,23 @@
 //! Why is it called Maven? I dunno. It sounds better than "movegen" tho.
 
 #![allow(clippy::comparison_chain)]
+#![allow(clippy::field_reassign_with_default)]
 
 use std::cmp::min;
 
-use sealion_board::{BitBoard, CastlingRights, Color, Move, Piece, PieceKind, Position, Square};
+use sealion_board::{
+    BitBoard, Capture, CastlingRights, Color, MoveExt, Piece, PieceKind, Position, Square,
+};
 use smallvec::SmallVec;
+
+#[inline]
+fn merge_bb(boards: [BitBoard; 4]) -> BitBoard {
+    boards[0] | boards[1] | boards[2] | boards[3]
+}
 
 /// The primary structure which contains relevant piece state information, such as attacks and checks.
 pub enum MoveList {
-    Moves(Vec<Move>),
+    Moves(Vec<MoveExt>),
     Checkmate,
     Stalemate,
 }
@@ -32,7 +40,24 @@ impl MoveList {
         Self::Moves(move_list)
     }
 
-    fn generate_impl(position: &Position, o_moves: &OpponentMoves) -> Vec<Move> {
+    fn generate_impl(position: &Position, o_moves: &OpponentMoves) -> Vec<MoveExt> {
+        // capture handler
+        let resolve_capture = |square: Square, mover: PieceKind| -> Option<Capture> {
+            if let Some(piece) = o_moves.pieces[square.raw_index() as usize] {
+                return Some(Capture::Regular(piece));
+            }
+
+            if let Some(ep_target) = position.ep_target {
+                if mover == PieceKind::Pawn
+                    && square.raw_index().abs_diff(ep_target.raw_index()) == 8
+                {
+                    return Some(Capture::EnPassant(ep_target));
+                }
+            }
+
+            None
+        };
+
         let mut moves = Vec::with_capacity(256);
 
         // initial king move generation
@@ -40,11 +65,12 @@ impl MoveList {
         let king_moves = Self::pseudo_king_moves(king_sq, position) & !o_moves.attacks;
 
         for to_square in king_moves.set_iter() {
-            let p_move = Move {
+            let p_move = MoveExt {
                 from: king_sq,
                 to: to_square,
                 piece_kind: PieceKind::King,
                 promotion: None,
+                capture: (resolve_capture)(to_square, PieceKind::King),
             };
 
             moves.push(p_move);
@@ -61,16 +87,16 @@ impl MoveList {
         // Melee check
         // - Checker can be captured
         // ~ King move to non-attacked square
-        if let Some(checker) = o_moves.checkers.melee.get(0) {
-            restricted = BitBoard::from_square(checker.0);
+        if let Some(checker_sq) = o_moves.checkers.melee.get(0) {
+            restricted = BitBoard::from_square(*checker_sq);
         }
 
         // Sliding check
         // - Checker can be captured
         // - Checker can be blocked along attack-ray
         // ~ King move to non-attacked square
-        if let Some(checker) = o_moves.checkers.sliders.get(0) {
-            restricted = BitBoard::from_square(checker.0) | checker.1;
+        if let Some(checker_ray) = o_moves.checkers.sliders.get(0) {
+            restricted = *checker_ray;
         }
 
         // Generate other piece moves
@@ -115,11 +141,12 @@ impl MoveList {
                         PieceKind::Rook,
                         PieceKind::Queen,
                     ] {
-                        let p_move = Move {
+                        let p_move = MoveExt {
                             from: square,
                             to: to_square,
                             piece_kind,
                             promotion: Some(promote_to),
+                            capture: (resolve_capture)(to_square, piece_kind),
                         };
 
                         moves.push(p_move);
@@ -131,11 +158,12 @@ impl MoveList {
             let legal_moves = p_moves & restricted;
 
             for to_square in legal_moves.set_iter() {
-                let p_move = Move {
+                let p_move = MoveExt {
                     from: square,
                     to: to_square,
                     piece_kind,
                     promotion: None,
+                    capture: (resolve_capture)(to_square, piece_kind),
                 };
 
                 moves.push(p_move);
@@ -155,16 +183,18 @@ struct Checkers {
     /// Nearby attackers.
     ///
     /// Have to be captured or evaded by king.
-    melee: SmallVec<[(Square, BitBoard); 4]>,
-    /// Faraway attackers.
+    melee: SmallVec<[Square; 2]>,
+    /// Faraway attacker ray.
     ///
     /// Have to be captured, evaded or blocked.
-    sliders: SmallVec<[(Square, BitBoard); 4]>,
+    sliders: SmallVec<[BitBoard; 2]>,
 }
 
 /// Pseudo moves for the opponent. Used to calculate checks and pins.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct OpponentMoves {
+    /// Pre-calculated piece kinds for each square.
+    pieces: [Option<PieceKind>; 64],
     /// All attacked squares.
     attacks: BitBoard,
     /// Attackers on our king.
@@ -173,6 +203,18 @@ pub struct OpponentMoves {
     pinners: SmallVec<[(Square, BitBoard); 4]>,
     /// Friendly king square.
     friendly_king: BitBoard,
+}
+
+impl Default for OpponentMoves {
+    fn default() -> Self {
+        Self {
+            pieces: [None; 64],
+            attacks: Default::default(),
+            checkers: Default::default(),
+            pinners: Default::default(),
+            friendly_king: Default::default(),
+        }
+    }
 }
 
 impl OpponentMoves {
@@ -202,7 +244,7 @@ impl OpponentMoves {
 
                         if intersect == 1 {
                             // only king intersects - check
-                            this.checkers.sliders.push((square, ray));
+                            this.checkers.sliders.push(square_bb | ray);
                         } else if intersect == 2 {
                             // king and one more piece intersect - pin
                             this.pinners.push((square, ray));
@@ -211,13 +253,9 @@ impl OpponentMoves {
                 }
             };
 
-            let mut handle_melee_checker = |melee| {
-                if melee & this.friendly_king != 0 {
-                    this.checkers.melee.push((square, melee));
-                }
-            };
-
             // Generate moves
+            let mut p_moves = BitBoard(0);
+            let mut piece_kind = PieceKind::Pawn;
 
             // Bishop
             if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
@@ -226,7 +264,8 @@ impl OpponentMoves {
 
                 (handle_sliding_checker)(pinner);
 
-                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+                p_moves = merge_bb(slider);
+                piece_kind = PieceKind::Bishop;
             // Rook
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
                 let slider = MoveList::sliding_attacks::<1>(square, friendly | unfriendly);
@@ -234,7 +273,8 @@ impl OpponentMoves {
 
                 (handle_sliding_checker)(pinner);
 
-                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+                p_moves = merge_bb(slider);
+                piece_kind = PieceKind::Rook;
             // Queen
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
                 // bishop moves first
@@ -243,7 +283,7 @@ impl OpponentMoves {
 
                 (handle_sliding_checker)(pinner);
 
-                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+                p_moves = merge_bb(slider);
 
                 // rook moves
                 let slider = MoveList::sliding_attacks::<1>(square, friendly | unfriendly);
@@ -251,27 +291,37 @@ impl OpponentMoves {
 
                 (handle_sliding_checker)(pinner);
 
-                this.attacks |= slider[0] | slider[1] | slider[2] | slider[3];
+                p_moves |= merge_bb(slider);
+                piece_kind = PieceKind::Queen;
             // Knight
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Knight) != 0 {
                 let melee = MoveList::knight_attacks(square);
 
-                (handle_melee_checker)(melee);
+                if melee & this.friendly_king != 0 {
+                    this.checkers.melee.push(square);
+                }
 
-                this.attacks |= melee;
+                p_moves = melee;
+                piece_kind = PieceKind::Knight;
             // Pawn
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Pawn) != 0 {
                 let melee = MoveList::pawn_attacks(square, pos_opp.active_color);
 
-                (handle_melee_checker)(melee);
+                if melee & this.friendly_king != 0 {
+                    this.checkers.melee.push(square);
+                }
 
-                this.attacks |= melee;
+                p_moves = melee;
             // King
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::King) != 0 {
                 let melee = MoveList::king_attacks(square);
                 // king can't check another king
-                this.attacks |= melee;
+                p_moves = melee;
+                piece_kind = PieceKind::King;
             }
+
+            this.attacks = p_moves;
+            this.pieces[square.raw_index() as usize] = Some(piece_kind);
         }
 
         this
@@ -295,7 +345,7 @@ impl MoveList {
 
         let attacks = Self::sliding_attacks::<DIR>(square, blockers);
 
-        (attacks[0] | attacks[1] | attacks[2] | attacks[3]) & !friendly
+        merge_bb(attacks) & !friendly
     }
 
     fn sliding_attacks<const DIR: u8>(square: Square, blockers: BitBoard) -> [BitBoard; 4] {
@@ -603,18 +653,19 @@ impl MoveList {
         king_sq: Square,
         position: &Position,
         attacks: BitBoard,
-    ) -> SmallVec<[Move; 2]> {
+    ) -> SmallVec<[MoveExt; 2]> {
         let mut moves = SmallVec::new();
 
         let blockers = position.board.get_full_bb();
 
         let mut do_checks = |checks: CastlingChecks| {
             if checks.clear & blockers == 0 && checks.safe & attacks == 0 {
-                moves.push(Move {
+                moves.push(MoveExt {
                     piece_kind: PieceKind::King,
                     from: king_sq,
                     to: checks.to_sq,
                     promotion: None,
+                    capture: None,
                 });
             }
         };

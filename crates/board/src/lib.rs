@@ -116,7 +116,7 @@ pub struct Board {
 
 impl Board {
     /// Get the color at a certain square.
-    pub fn get_color_at(&self, square: Square) -> Option<Color> {
+    pub fn get_color(&self, square: Square) -> Option<Color> {
         self.color_bb.iter().enumerate().find_map(|(n, bb)| {
             if bb.get(square) {
                 Color::from_repr(n as u8)
@@ -127,7 +127,7 @@ impl Board {
     }
 
     /// Get the piece type at a certain square.
-    pub fn get_piece_kind_at(&self, square: Square) -> Option<PieceKind> {
+    pub fn get_piece_kind(&self, square: Square) -> Option<PieceKind> {
         self.piece_bb.iter().enumerate().find_map(|(n, bb)| {
             if bb.get(square) {
                 PieceKind::from_repr(n as u8)
@@ -139,15 +139,13 @@ impl Board {
 
     /// Get the piece at a certain square.
     pub fn get(&self, square: Square) -> Option<Piece> {
-        let (color, kind) = self
-            .get_color_at(square)
-            .zip(self.get_piece_kind_at(square))?;
+        let (color, kind) = self.get_color(square).zip(self.get_piece_kind(square))?;
         Some(Piece { color, kind })
     }
 
     /// Get the bitboard associated with a certain piece.
     #[inline]
-    pub fn get_bb(&self, piece: Piece) -> BitBoard {
+    pub fn get_piece_bb(&self, piece: Piece) -> BitBoard {
         self.piece_bb[piece.kind as u8 as usize] & self.color_bb[piece.color as u8 as usize]
     }
 
@@ -159,7 +157,7 @@ impl Board {
 
     /// Get an exclusive reference to the bitboard associated with a certain piece kind.
     #[inline]
-    pub fn get_piece_bb_mut(&mut self, piece: PieceKind) -> &mut BitBoard {
+    pub fn get_piece_kind_bb_mut(&mut self, piece: PieceKind) -> &mut BitBoard {
         &mut self.piece_bb[piece as u8 as usize]
     }
 
@@ -175,12 +173,6 @@ impl Board {
         &mut self.color_bb[color as u8 as usize]
     }
 
-    /// Get the bitboard for a specific piece and color.
-    #[inline]
-    pub fn get_piece_bb(&self, piece: Piece) -> BitBoard {
-        self.get_piece_kind_bb(piece.kind) & self.get_color_bb(piece.color)
-    }
-
     /// Get the full board.
     #[inline]
     pub fn get_full_bb(&self) -> BitBoard {
@@ -188,14 +180,14 @@ impl Board {
     }
 
     /// Set a piece on the board.
+    #[inline]
     pub fn set(&mut self, square: Square, piece: Option<Piece>) {
         match piece {
             Some(piece) => {
                 self.get_color_bb_mut(piece.color).set(square, true);
-                self.get_piece_bb_mut(piece.kind).set(square, true);
+                self.get_piece_kind_bb_mut(piece.kind).set(square, true);
             }
             None => {
-                // should be vectorized hopefully
                 for bb in &mut self.color_bb {
                     bb.set(square, false);
                 }
