@@ -133,10 +133,13 @@ impl Position {
                 *self.board.get_color_bb_mut(self.active_color.opposite()) &= !to_sq;
                 *self.board.get_piece_kind_bb_mut(cap) &= !to_sq;
             }
-            Some(Capture::EnPassant(target)) => {
-                let target_sq = BitBoard::from_square(target);
-                *self.board.get_color_bb_mut(self.active_color.opposite()) &= !target_sq;
-                *self.board.get_piece_kind_bb_mut(PieceKind::Pawn) &= !target_sq;
+            Some(Capture::EnPassant) => {
+                let captured_sq = match self.active_color {
+                    Color::White => to_sq >> 8,
+                    Color::Black => to_sq << 8,
+                };
+                *self.board.get_color_bb_mut(self.active_color.opposite()) &= !captured_sq;
+                *self.board.get_piece_kind_bb_mut(PieceKind::Pawn) &= !captured_sq;
             }
             _ => {}
         }

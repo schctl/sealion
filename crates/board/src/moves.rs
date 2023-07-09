@@ -30,7 +30,7 @@ impl Display for Move {
 #[derive(Debug, Clone, Copy)]
 pub enum Capture {
     Regular(PieceKind),
-    EnPassant(Square),
+    EnPassant,
 }
 
 /// Some additional info about a move to help with move ordering, application, etc.
