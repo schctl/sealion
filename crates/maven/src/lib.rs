@@ -210,11 +210,13 @@ struct Checkers {
 pub struct OpponentMoves {
     /// Pre-calculated piece kinds for each square.
     pieces: [Option<PieceKind>; 64],
-    /// All attacked squares.
+    /// Attacked squares to restrict king movement.
     attacks: BitBoard,
     /// Attackers on our king.
     checkers: Checkers,
     /// Sliders pinning pieces to the king.
+    ///
+    /// Restrict movement for those piece only along the pinning ray.
     pinners: SmallVec<[BitBoard; 2]>,
     /// Friendly king square.
     friendly_king: BitBoard,
@@ -267,6 +269,7 @@ impl OpponentMoves {
 
         let friendly = pos_opp.board.get_color_bb(pos_opp.active_color);
         let unfriendly = pos_opp.board.get_color_bb(pos_opp.active_color.opposite());
+        let unfriendly_minions = unfriendly & !this.friendly_king;
 
         for square in friendly.set_iter() {
             let square_bb = BitBoard::from_square(square);
@@ -297,39 +300,39 @@ impl OpponentMoves {
 
             // Bishop
             if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
-                let slider = MoveList::sliding_attacks::<0>(square, friendly | unfriendly);
+                let attack = MoveList::sliding_attacks::<0>(square, friendly | unfriendly_minions);
                 let pinner = MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
 
                 (handle_pin)(pinner);
 
-                p_moves = merge_bb(slider);
+                p_moves = merge_bb(attack);
                 piece_kind = PieceKind::Bishop;
             // Rook
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
-                let slider = MoveList::sliding_attacks::<1>(square, friendly | unfriendly);
+                let attack = MoveList::sliding_attacks::<1>(square, friendly | unfriendly_minions);
                 let pinner = MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
 
                 (handle_pin)(pinner);
 
-                p_moves = merge_bb(slider);
+                p_moves = merge_bb(attack);
                 piece_kind = PieceKind::Rook;
             // Queen
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
-                // bishop moves first
-                let slider = MoveList::sliding_attacks::<0>(square, friendly | unfriendly);
-                let pinner = MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
-
-                (handle_pin)(pinner);
-
-                p_moves = merge_bb(slider);
-
+                // bishop moves
+                let attack_b =
+                    MoveList::sliding_attacks::<0>(square, friendly | unfriendly_minions);
+                let pinner_b =
+                    MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
                 // rook moves
-                let slider = MoveList::sliding_attacks::<1>(square, friendly | unfriendly);
-                let pinner = MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
+                let attack_r =
+                    MoveList::sliding_attacks::<1>(square, friendly | unfriendly_minions);
+                let pinner_r =
+                    MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
 
-                (handle_pin)(pinner);
+                (handle_pin)(pinner_b);
+                (handle_pin)(pinner_r);
 
-                p_moves |= merge_bb(slider);
+                p_moves = merge_bb(attack_b) | merge_bb(attack_r);
                 piece_kind = PieceKind::Queen;
             // Knight
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Knight) != 0 {

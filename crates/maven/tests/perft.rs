@@ -25,11 +25,23 @@ fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
     nodes
 }
 
+fn do_perft_x(x: usize, result: usize) {
+    let position = Position::starting();
+    let nodes = perft(&position, x, x);
+    assert_eq!(nodes, result);
+}
+
 #[test]
-fn do_perft() {
-    let mut position = Position::starting();
+fn do_perft_3() {
+    do_perft_x(3, 8_902)
+}
 
-    let nodes = perft(&position, 5, 5);
+#[test]
+fn do_perft_4() {
+    do_perft_x(4, 197_281)
+}
 
-    println!("{nodes} nodes found");
+#[test]
+fn do_perft_5() {
+    do_perft_x(5, 4_865_609)
 }
