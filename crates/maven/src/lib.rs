@@ -522,10 +522,15 @@ impl MoveList {
     }
 
     pub fn pseudo_pawn_moves(square: Square, position: &Position) -> BitBoard {
-        let unfriendly = position
+        let mut unfriendly = position
             .board
             .get_color_bb(position.active_color.opposite());
         let blockers = position.board.get_full_bb();
+
+        // fake a piece for ep
+        if let Some(ep_target) = position.ep_target {
+            unfriendly |= BitBoard::from_square(ep_target);
+        }
 
         let start = BitBoard::from_square(square);
         let mut moves = Self::pawn_attacks(square, position.active_color) & unfriendly;
@@ -547,17 +552,6 @@ impl MoveList {
                         }
                     }
                 }
-
-                // en passant
-                if let Some(ep_target) = position.ep_target {
-                    let offset = ep_target.raw_index().saturating_sub(square.raw_index());
-
-                    if (offset == 7 && ep_target.file() > 0)
-                        || (offset == 9 && ep_target.file() < 7)
-                    {
-                        moves |= BitBoard::from_square(ep_target);
-                    }
-                }
             }
             Color::Black => {
                 // single push
@@ -574,17 +568,6 @@ impl MoveList {
                         if square.rank() == 6 && blockers & next_2 == 0 {
                             moves |= next_2;
                         }
-                    }
-                }
-
-                // en passant
-                if let Some(ep_target) = position.ep_target {
-                    let offset = square.raw_index().saturating_sub(ep_target.raw_index());
-
-                    if (offset == 7 && ep_target.file() > 0)
-                        || (offset == 9 && ep_target.file() < 7)
-                    {
-                        moves |= BitBoard::from_square(ep_target);
                     }
                 }
             }

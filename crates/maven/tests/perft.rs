@@ -29,7 +29,7 @@ fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
 fn do_perft() {
     let mut position = Position::starting();
 
-    let nodes = perft(&position, 4, 4);
+    let nodes = perft(&position, 5, 5);
 
     println!("{nodes} nodes found");
 }
