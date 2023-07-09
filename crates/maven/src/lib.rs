@@ -93,7 +93,7 @@ impl MoveList {
 
             for pinned in &o_moves.pinners {
                 if square_bb & *pinned != 0 {
-                    restricted |= *pinned;
+                    restricted &= *pinned;
                     break;
                 }
             }
@@ -176,7 +176,7 @@ impl MoveList {
                             promotion: None,
                             capture: o_moves
                                 .resolve_capture(to_square)
-                                .or_else(|| o_moves.resolve_ep(square, position.ep_target)),
+                                .or_else(|| o_moves.resolve_ep(to_square, position.ep_target)),
                         };
 
                         moves.push(p_move);
@@ -358,7 +358,7 @@ impl OpponentMoves {
                 piece_kind = PieceKind::King;
             }
 
-            this.attacks = p_moves;
+            this.attacks |= p_moves;
             this.pieces[square.raw_index() as usize] = Some(piece_kind);
         }
 
@@ -552,7 +552,9 @@ impl MoveList {
                 if let Some(ep_target) = position.ep_target {
                     let offset = ep_target.raw_index().saturating_sub(square.raw_index());
 
-                    if offset == 7 || offset == 9 {
+                    if (offset == 7 && ep_target.file() > 0)
+                        || (offset == 9 && ep_target.file() < 7)
+                    {
                         moves |= BitBoard::from_square(ep_target);
                     }
                 }
@@ -579,7 +581,9 @@ impl MoveList {
                 if let Some(ep_target) = position.ep_target {
                     let offset = square.raw_index().saturating_sub(ep_target.raw_index());
 
-                    if offset == 7 || offset == 9 {
+                    if (offset == 7 && ep_target.file() > 0)
+                        || (offset == 9 && ep_target.file() < 7)
+                    {
                         moves |= BitBoard::from_square(ep_target);
                     }
                 }
@@ -623,7 +627,10 @@ impl MoveList {
                 moves |= mask;
             }
             // S
-            mask >>= 16;
+            let mut mask = 0;
+            mask |= start >> 7;
+            mask |= start >> 8;
+            mask |= start >> 9;
 
             if square.rank() == 0 {
                 moves &= !mask;

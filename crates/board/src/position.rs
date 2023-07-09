@@ -113,7 +113,11 @@ impl Position {
             return;
         }
 
-        // handle pawn promotion
+        // handle special pawn cases
+
+        // reset ep
+        self.ep_target = None;
+
         if p_move.piece_kind == PieceKind::Pawn {
             if let Some(promotion) = p_move.promotion {
                 // remove previously moved pawn
@@ -125,6 +129,16 @@ impl Position {
 
                 return;
             }
+
+            // double push - set ep target
+            if p_move.to.raw_index().abs_diff(p_move.from.raw_index()) == 16 {
+                let ep_target = match self.active_color {
+                    Color::White => Square::from_index_unchecked(p_move.from.raw_index() + 8),
+                    Color::Black => Square::from_index_unchecked(p_move.from.raw_index() - 8),
+                };
+
+                self.ep_target = Some(ep_target);
+            }
         }
 
         // check for capture
@@ -132,6 +146,7 @@ impl Position {
             Some(Capture::Regular(cap)) => {
                 *self.board.get_color_bb_mut(self.active_color.opposite()) &= !to_sq;
                 *self.board.get_piece_kind_bb_mut(cap) &= !to_sq;
+                *self.board.get_piece_kind_bb_mut(p_move.piece_kind) |= to_sq; // in case they're the same type
             }
             Some(Capture::EnPassant) => {
                 let captured_sq = match self.active_color {
