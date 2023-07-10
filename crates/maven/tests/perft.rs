@@ -1,7 +1,9 @@
+use paste::paste;
+
 use sealion_board::Position;
 use sealion_maven::MoveList;
 
-fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
+pub fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
     if depth == 0 {
         return 1;
     }
@@ -25,23 +27,44 @@ fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
     nodes
 }
 
-fn do_perft_x(x: usize, result: usize) {
-    let position = Position::starting();
+fn do_perft(fen: &str, x: usize, result: usize) {
+    let position = sealion_fen::de::parse(fen).unwrap().1;
     let nodes = perft(&position, x, x);
     assert_eq!(nodes, result);
 }
 
-#[test]
-fn do_perft_3() {
-    do_perft_x(3, 8_902)
+macro_rules! def_test {
+    ($name:ident $fen:expr => [
+        $($depth:expr => $result:expr),*
+    ]) => {
+        paste! {
+            const [<$name:snake:upper>]: &'static str = $fen;
+
+            $(
+                #[test]
+                fn [<$name:snake _perft_ $depth>]() {
+                    do_perft([<$name:snake:upper>], $depth, $result);
+                }
+            )*
+        }
+    };
 }
 
-#[test]
-fn do_perft_4() {
-    do_perft_x(4, 197_281)
+def_test! {
+    start_pos "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" => [
+        3 => 8_902,
+        4 => 197_281,
+        5 => 4_865_609
+        // 6 => 119_060_324
+    ]
 }
 
-#[test]
-fn do_perft_5() {
-    do_perft_x(5, 4_865_609)
+def_test! {
+    // https://www.chessprogramming.org/Perft_Results#Position_5
+    pos_5 "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8" => [
+        1 => 44,
+        2 => 1_486,
+        3 => 62_379,
+        4 => 2_103_487
+    ]
 }

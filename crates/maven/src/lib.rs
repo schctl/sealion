@@ -20,6 +20,7 @@ fn merge_bb(boards: [BitBoard; 4]) -> BitBoard {
 }
 
 /// The primary structure which contains relevant piece state information, such as attacks and checks.
+#[derive(Debug, Clone)]
 pub enum MoveList {
     Moves(Vec<MoveExt>),
     Checkmate,

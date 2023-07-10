@@ -1,6 +1,6 @@
 //! The full game position.
 
-use crate::{BitBoard, Board, Capture, Color, MoveExt, PieceKind, Square};
+use crate::{BitBoard, Board, Capture, Color, MoveExt, PieceKind, Square, bitboard};
 
 bitflags::bitflags! {
     /// Player castling availability.
@@ -69,6 +69,16 @@ impl Position {
         }
     }
 
+    /// Reset castle flags if a rook on `square_bb` changes.
+    #[inline]
+    fn reset_rook_castling(&mut self, square_bb: BitBoard) {
+        if square_bb & bitboard::constants::A_FILE != 0 {
+            self.castling = self.castling.unset_ooo(self.active_color)
+        } else if square_bb & bitboard::constants::H_FILE != 0 {
+            self.castling = self.castling.unset_oo(self.active_color)
+        }
+    }
+
     /// Apply a move without preliminary checks (piece existence for egs).
     pub fn apply_move_unchecked(&mut self, p_move: MoveExt) {
         let from_sq = BitBoard::from_square(p_move.from);
@@ -84,33 +94,38 @@ impl Position {
         *piece_bb |= to_sq;
 
         // handle castling
-        if p_move.piece_kind == PieceKind::King
-            && p_move.from.raw_index().abs_diff(p_move.to.raw_index()) == 2
-        {
-            // queen side
-            let (rook_from_sq, rook_to_sq) = if p_move.to.raw_index() < p_move.from.raw_index() {
-                self.castling = self.castling.unset_ooo(self.active_color);
-                let rfs = from_sq >> 4;
-                let rts = to_sq >> 1;
-                (rfs, rts)
+        if p_move.piece_kind == PieceKind::King {
+            self.castling = self.castling.unset_oo(self.active_color);
+            self.castling = self.castling.unset_ooo(self.active_color);
+
+            // do castles
+            if p_move.from.raw_index().abs_diff(p_move.to.raw_index()) == 2 {
+                // queen side
+                let (rook_from_sq, rook_to_sq) = if p_move.to.raw_index() < p_move.from.raw_index()
+                {
+                    let rfs = from_sq >> 4;
+                    let rts = from_sq >> 1;
+                    (rfs, rts)
+                }
+                // king side
+                else {
+                    let rfs = from_sq << 3;
+                    let rts = from_sq << 1;
+                    (rfs, rts)
+                };
+
+                let rook_bb = self.board.get_piece_kind_bb_mut(PieceKind::Rook);
+                *rook_bb &= !rook_from_sq;
+                *rook_bb |= rook_to_sq;
+
+                let color_bb = self.board.get_color_bb_mut(self.active_color);
+                *color_bb &= !rook_from_sq;
+                *color_bb |= rook_to_sq;
             }
-            // king side
-            else {
-                self.castling = self.castling.unset_oo(self.active_color);
-                let rfs = from_sq << 3;
-                let rts = to_sq << 1;
-                (rfs, rts)
-            };
+        }
 
-            let rook_bb = self.board.get_piece_kind_bb_mut(PieceKind::Rook);
-            *rook_bb &= !rook_from_sq;
-            *rook_bb |= rook_to_sq;
-
-            let color_bb = self.board.get_color_bb_mut(self.active_color);
-            *color_bb &= !rook_from_sq;
-            *color_bb |= rook_to_sq;
-
-            return;
+        if p_move.piece_kind == PieceKind::Rook {
+           self.reset_rook_castling(from_sq);
         }
 
         // handle special pawn cases
@@ -126,8 +141,6 @@ impl Position {
 
                 let promo_bb = self.board.get_piece_kind_bb_mut(promotion);
                 *promo_bb |= to_sq;
-
-                return;
             }
 
             // double push - set ep target
@@ -147,6 +160,10 @@ impl Position {
                 *self.board.get_color_bb_mut(self.active_color.opposite()) &= !to_sq;
                 *self.board.get_piece_kind_bb_mut(cap) &= !to_sq;
                 *self.board.get_piece_kind_bb_mut(p_move.piece_kind) |= to_sq; // in case they're the same type
+
+                if cap == PieceKind::Rook {
+                    self.reset_rook_castling(to_sq);
+                }
             }
             Some(Capture::EnPassant) => {
                 let captured_sq = match self.active_color {
@@ -159,6 +176,7 @@ impl Position {
             _ => {}
         }
 
+        // increment counters
         if p_move.capture.is_none() || p_move.piece_kind != PieceKind::Pawn {
             self.halfmove_clock += 1;
         }

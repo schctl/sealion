@@ -10,11 +10,14 @@ authors = { workspace = true }
 sealion_board = { workspace = true }
 smallvec = "1"
 
+[dev-dependencies]
+paste = "1"
+sealion_fen = { workspace = true }
+
 # -- Benchmarking --
 
-[dev-dependencies]
-criterion = "0.4"
-sealion_fen = { workspace = true }
+[dev-dependencies.criterion]
+version = "0.4"
 
 [[bench]]
 name = "movegen"

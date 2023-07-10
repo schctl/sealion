@@ -135,3 +135,10 @@ impl ExactSizeIterator for SetIter {
         self.inner.0.count_ones() as usize
     }
 }
+
+pub mod constants {
+    use super::*;
+
+    pub const A_FILE: BitBoard = BitBoard(0x01_01_01_01_01_01_01_01);
+    pub const H_FILE: BitBoard = BitBoard(0x80_80_80_80_80_80_80_80);
+}
