@@ -12,6 +12,8 @@ use sealion_board::{
 };
 use smallvec::SmallVec;
 
+mod tables;
+
 #[inline]
 fn merge_bb(boards: [BitBoard; 4]) -> BitBoard {
     boards[0] | boards[1] | boards[2] | boards[3]
@@ -397,10 +399,10 @@ impl MoveList {
             0 => {
                 // DIAGONAL
                 let max = [
-                    min(7 - square.rank(), 7 - square.file()) as i8, // NE
-                    min(7 - square.rank(), square.file()) as i8,     // NW
-                    min(square.rank(), 7 - square.file()) as i8,     // SE
-                    min(square.rank(), square.file()) as i8,         // SW
+                    min(7 - square.rank(), 7 - square.file()), // NE
+                    min(7 - square.rank(), square.file()),     // NW
+                    min(square.rank(), 7 - square.file()),     // SE
+                    min(square.rank(), square.file()),         // SW
                 ];
 
                 (max, [[9, 7, 0, 0], [0, 0, 7, 9]])
@@ -408,10 +410,10 @@ impl MoveList {
             1 => {
                 // ORTHOGONAL
                 let max = [
-                    7 - square.rank() as i8, // N
-                    square.rank() as i8,     // S
-                    7 - square.file() as i8, // E
-                    square.file() as i8,     // W
+                    7 - square.rank(), // N
+                    square.rank(),     // S
+                    7 - square.file(), // E
+                    square.file(),     // W
                 ];
 
                 (max, [[8, 0, 1, 0], [0, 8, 0, 1]])
@@ -439,54 +441,8 @@ impl MoveList {
         moves
     }
 
-    /// Pre-calculated knight move table for each position on the board.
-    const KNIGHT_ATTACKS: [BitBoard; 64] = {
-        let mut all_moves = [BitBoard(0); 64];
-
-        let mut i = 0;
-        while i < 64 {
-            let mut moves = 0;
-            let square = Square::from_index_unchecked(i);
-            let start = 1 << i;
-
-            // NW
-            if square.file() >= 2 && square.rank() < 7 {
-                moves |= start << 6;
-            }
-            if square.file() >= 1 && square.rank() < 6 {
-                moves |= start << 15;
-            }
-            // NE
-            if square.file() <= 5 && square.rank() < 7 {
-                moves |= start << 10;
-            }
-            if square.file() <= 6 && square.rank() < 6 {
-                moves |= start << 17;
-            }
-            // SW
-            if square.file() >= 2 && square.rank() >= 1 {
-                moves |= start >> 10;
-            }
-            if square.file() >= 1 && square.rank() >= 2 {
-                moves |= start >> 17;
-            }
-            // SE
-            if square.file() <= 5 && square.rank() >= 1 {
-                moves |= start >> 6;
-            }
-            if square.file() <= 6 && square.rank() >= 2 {
-                moves |= start >> 15;
-            }
-
-            all_moves[i as usize] = BitBoard(moves);
-            i += 1;
-        }
-
-        all_moves
-    };
-
     fn knight_attacks(square: Square) -> BitBoard {
-        Self::KNIGHT_ATTACKS[square.raw_index() as usize]
+        tables::KNIGHT_ATTACKS[square.raw_index() as usize]
     }
 
     #[inline]
@@ -495,33 +451,7 @@ impl MoveList {
     }
 
     fn pawn_attacks(square: Square, color: Color) -> BitBoard {
-        let mut moves = BitBoard(0);
-        let start = BitBoard::from_square(square);
-
-        match color {
-            Color::White => {
-                if square.rank() < 7 {
-                    if square.file() > 0 {
-                        moves |= start << 7;
-                    }
-                    if square.file() < 7 {
-                        moves |= start << 9;
-                    }
-                }
-            }
-            Color::Black => {
-                if square.rank() > 0 {
-                    if square.file() > 0 {
-                        moves |= start >> 9;
-                    }
-                    if square.file() < 7 {
-                        moves |= start >> 7;
-                    }
-                }
-            }
-        }
-
-        moves
+        tables::PAWN_ATTACKS[(square.raw_index() + (color as u8 * 64)) as usize]
     }
 
     pub fn pseudo_pawn_moves(square: Square, position: &Position) -> BitBoard {
@@ -579,60 +509,8 @@ impl MoveList {
         moves
     }
 
-    /// Pre-calculated king move table for each position on the board.
-    const KING_ATTACKS: [BitBoard; 64] = {
-        let mut all_moves = [BitBoard(0); 64];
-
-        let mut i = 0;
-        while i < 64 {
-            let mut moves = 0;
-            let square = Square::from_index_unchecked(i);
-            let start = 1 << i;
-
-            // E
-            if square.file() > 0 {
-                moves |= start >> 9;
-                moves |= start >> 1;
-                moves |= start << 7;
-            }
-            // W
-            if square.file() < 7 {
-                moves |= start >> 7;
-                moves |= start << 1;
-                moves |= start << 9;
-            }
-            // N
-            let mut mask = 0;
-            mask |= start << 7;
-            mask |= start << 8;
-            mask |= start << 9;
-
-            if square.rank() == 7 {
-                moves &= !mask;
-            } else {
-                moves |= mask;
-            }
-            // S
-            let mut mask = 0;
-            mask |= start >> 7;
-            mask |= start >> 8;
-            mask |= start >> 9;
-
-            if square.rank() == 0 {
-                moves &= !mask;
-            } else {
-                moves |= mask;
-            }
-
-            all_moves[i as usize] = BitBoard(moves);
-            i += 1;
-        }
-
-        all_moves
-    };
-
     fn king_attacks(square: Square) -> BitBoard {
-        Self::KING_ATTACKS[square.raw_index() as usize]
+        tables::KING_ATTACKS[square.raw_index() as usize]
     }
 
     #[inline]
