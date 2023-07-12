@@ -1,6 +1,6 @@
 //! The full game position.
 
-use crate::{BitBoard, Board, Capture, Color, MoveExt, PieceKind, Square, bitboard};
+use crate::{bitboard, BitBoard, Board, Capture, Color, MoveExt, PieceKind, Square};
 
 bitflags::bitflags! {
     /// Player castling availability.
@@ -125,7 +125,7 @@ impl Position {
         }
 
         if p_move.piece_kind == PieceKind::Rook {
-           self.reset_rook_castling(from_sq);
+            self.reset_rook_castling(from_sq);
         }
 
         // handle special pawn cases
