@@ -1,9 +1,9 @@
 //! Opponent moves generation.
 
-use sealion_board::{BitBoard, Capture, Piece, PieceKind, Position, Square};
+use sealion_board::{BitBoard, Capture, PieceKind, Position, Square};
 use smallvec::SmallVec;
 
-use super::{merge_bb, MoveList};
+use super::{merge_bb, Generator};
 
 #[derive(Debug, Clone, Default)]
 pub struct Checkers {
@@ -30,8 +30,6 @@ pub struct OpponentMoves {
     ///
     /// Restrict movement for those piece only along the pinning ray.
     pub pinners: SmallVec<[BitBoard; 2]>,
-    /// Friendly king square.
-    pub friendly_king: BitBoard,
 }
 
 impl Default for OpponentMoves {
@@ -41,7 +39,6 @@ impl Default for OpponentMoves {
             attacks: Default::default(),
             checkers: Default::default(),
             pinners: Default::default(),
-            friendly_king: Default::default(),
         }
     }
 }
@@ -67,13 +64,8 @@ impl OpponentMoves {
         None
     }
 
-    pub fn generate(position: &Position) -> Self {
+    pub fn generate(position: &Position, friendly_king: BitBoard) -> Self {
         let mut this = Self::default();
-
-        this.friendly_king = position.board.get_piece_bb(Piece {
-            color: position.active_color,
-            kind: PieceKind::King,
-        });
 
         let mut pos_opp = position.clone();
         pos_opp.active_color = pos_opp.active_color.opposite();
@@ -81,7 +73,7 @@ impl OpponentMoves {
 
         let friendly = pos_opp.board.get_color_bb(pos_opp.active_color);
         let unfriendly = pos_opp.board.get_color_bb(pos_opp.active_color.opposite());
-        let unfriendly_minions = unfriendly & !this.friendly_king;
+        let unfriendly_minions = unfriendly & !friendly_king;
 
         for square in friendly.set_iter() {
             let square_bb = BitBoard::from_square(square);
@@ -89,7 +81,7 @@ impl OpponentMoves {
             // Handle pins/checks
             let mut handle_pin = |pinner: [BitBoard; 4]| {
                 for ray in pinner {
-                    if ray & this.friendly_king != 0 {
+                    if ray & friendly_king != 0 {
                         let intersect = ray & unfriendly;
                         let n_intersect = intersect.0.count_ones();
 
@@ -112,8 +104,8 @@ impl OpponentMoves {
 
             // Bishop
             if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
-                let attack = MoveList::sliding_attacks::<0>(square, friendly | unfriendly_minions);
-                let pinner = MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
+                let attack = Generator::sliding_attacks::<0>(square, friendly | unfriendly_minions);
+                let pinner = Generator::sliding_attacks::<0>(square, friendly | friendly_king);
 
                 (handle_pin)(pinner);
 
@@ -121,8 +113,8 @@ impl OpponentMoves {
                 piece_kind = PieceKind::Bishop;
             // Rook
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
-                let attack = MoveList::sliding_attacks::<1>(square, friendly | unfriendly_minions);
-                let pinner = MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
+                let attack = Generator::sliding_attacks::<1>(square, friendly | unfriendly_minions);
+                let pinner = Generator::sliding_attacks::<1>(square, friendly | friendly_king);
 
                 (handle_pin)(pinner);
 
@@ -132,14 +124,12 @@ impl OpponentMoves {
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
                 // bishop moves
                 let attack_b =
-                    MoveList::sliding_attacks::<0>(square, friendly | unfriendly_minions);
-                let pinner_b =
-                    MoveList::sliding_attacks::<0>(square, friendly | this.friendly_king);
+                    Generator::sliding_attacks::<0>(square, friendly | unfriendly_minions);
+                let pinner_b = Generator::sliding_attacks::<0>(square, friendly | friendly_king);
                 // rook moves
                 let attack_r =
-                    MoveList::sliding_attacks::<1>(square, friendly | unfriendly_minions);
-                let pinner_r =
-                    MoveList::sliding_attacks::<1>(square, friendly | this.friendly_king);
+                    Generator::sliding_attacks::<1>(square, friendly | unfriendly_minions);
+                let pinner_r = Generator::sliding_attacks::<1>(square, friendly | friendly_king);
 
                 (handle_pin)(pinner_b);
                 (handle_pin)(pinner_r);
@@ -148,9 +138,9 @@ impl OpponentMoves {
                 piece_kind = PieceKind::Queen;
             // Knight
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Knight) != 0 {
-                let melee = MoveList::knight_attacks(square);
+                let melee = Generator::knight_attacks(square);
 
-                if melee & this.friendly_king != 0 {
+                if melee & friendly_king != 0 {
                     this.checkers.melee.push(square);
                 }
 
@@ -158,16 +148,16 @@ impl OpponentMoves {
                 piece_kind = PieceKind::Knight;
             // Pawn
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Pawn) != 0 {
-                let melee = MoveList::pawn_attacks(square, pos_opp.active_color);
+                let melee = Generator::pawn_attacks(square, pos_opp.active_color);
 
-                if melee & this.friendly_king != 0 {
+                if melee & friendly_king != 0 {
                     this.checkers.melee.push(square);
                 }
 
                 p_moves = melee;
             // King
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::King) != 0 {
-                let melee = MoveList::king_attacks(square);
+                let melee = Generator::king_attacks(square);
                 // king can't check another king
                 p_moves = melee;
                 piece_kind = PieceKind::King;
