@@ -202,8 +202,8 @@ impl Board {
     #[rustfmt::skip]
     pub const fn starting_position() -> Self {
         let mut this = Self {
-            color_bb: [BitBoard(0); Color::COUNT],
-            piece_bb: [BitBoard(0); PieceKind::COUNT],
+            color_bb: [BitBoard::ZERO; Color::COUNT],
+            piece_bb: [BitBoard::ZERO; PieceKind::COUNT],
         };
 
         this.color_bb[Color::White as u8 as usize] = BitBoard(0x00_00_00_00_00_00_FF_FF);

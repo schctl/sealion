@@ -99,8 +99,8 @@ impl OpponentMoves {
             };
 
             // Generate moves
-            let mut p_moves = BitBoard(0);
-            let mut piece_kind = PieceKind::Pawn;
+            let mut p_moves = BitBoard::ZERO;
+            let mut p_kind = PieceKind::Pawn;
 
             // Bishop
             if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
@@ -110,7 +110,7 @@ impl OpponentMoves {
                 (handle_pin)(pinner);
 
                 p_moves = merge_bb(attack);
-                piece_kind = PieceKind::Bishop;
+                p_kind = PieceKind::Bishop;
             // Rook
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
                 let attack = Generator::sliding_attacks::<1>(square, friendly | unfriendly_minions);
@@ -119,7 +119,7 @@ impl OpponentMoves {
                 (handle_pin)(pinner);
 
                 p_moves = merge_bb(attack);
-                piece_kind = PieceKind::Rook;
+                p_kind = PieceKind::Rook;
             // Queen
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
                 // bishop moves
@@ -135,7 +135,7 @@ impl OpponentMoves {
                 (handle_pin)(pinner_r);
 
                 p_moves = merge_bb(attack_b) | merge_bb(attack_r);
-                piece_kind = PieceKind::Queen;
+                p_kind = PieceKind::Queen;
             // Knight
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Knight) != 0 {
                 let melee = Generator::knight_attacks(square);
@@ -145,7 +145,7 @@ impl OpponentMoves {
                 }
 
                 p_moves = melee;
-                piece_kind = PieceKind::Knight;
+                p_kind = PieceKind::Knight;
             // Pawn
             } else if square_bb & pos_opp.board.get_piece_kind_bb(PieceKind::Pawn) != 0 {
                 let melee = Generator::pawn_attacks(square, pos_opp.active_color);
@@ -160,11 +160,11 @@ impl OpponentMoves {
                 let melee = Generator::king_attacks(square);
                 // king can't check another king
                 p_moves = melee;
-                piece_kind = PieceKind::King;
+                p_kind = PieceKind::King;
             }
 
             this.attacks |= p_moves;
-            this.pieces[square.raw_index() as usize] = Some(piece_kind);
+            this.pieces[square.raw_index() as usize] = Some(p_kind);
         }
 
         this

@@ -35,6 +35,8 @@ use crate::Square;
 pub struct BitBoard(pub u64);
 
 impl BitBoard {
+    pub const ZERO: Self = Self(0);
+
     /// Get the value at this position.
     #[inline]
     pub const fn get(&self, square: Square) -> bool {

@@ -11,7 +11,7 @@ pub fn benchmark_de(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("De Random FEN", |b| {
+    c.bench_function("De Noisy FEN", |b| {
         b.iter(|| {
             sealion_fen::de::parse(black_box(
                 "1rb1kb1r/p1p1P1pp/1q1p1p2/1p1nN1n1/2BP1B1N/1Q2p3/PPP1P1PP/R4RK1 w Qk e6 0 1",

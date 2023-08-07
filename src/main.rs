@@ -7,7 +7,7 @@ fn main() {
     let mut fen = String::new();
     stdin().read_line(&mut fen).unwrap();
 
-    let position = sealion_fen::de::parse(&fen).unwrap().1;
+    let position = sealion_fen::from_str(&fen).unwrap();
 
     match MoveList::generate(&position) {
         MoveList::Checkmate => println!("Checkmate"),

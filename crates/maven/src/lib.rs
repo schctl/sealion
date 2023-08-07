@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 mod o_moves;
 mod tables;
 
-use o_moves::OpponentMoves;
+pub use o_moves::OpponentMoves;
 
 #[inline]
 fn merge_bb(boards: [BitBoard; 4]) -> BitBoard {
@@ -135,46 +135,33 @@ impl<'a> Generator<'a> {
             }
 
             // Generate moves
-
-            let mut push_moves = |p_moves: BitBoard, piece_kind| {
-                let legal_moves = p_moves & restricted;
-
-                for to_square in legal_moves.set_iter() {
-                    let p_move = MoveExt {
-                        from: square,
-                        to: to_square,
-                        piece_kind,
-                        promotion: None,
-                        capture: self.o_moves.resolve_capture(to_square),
-                    };
-
-                    moves.push(p_move);
-                }
-            };
+            let mut p_moves = BitBoard::ZERO;
+            let mut p_kind = PieceKind::Pawn;
 
             // Bishop
+
             if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
-                let p_moves = self.pseudo_bishop_moves(square);
-                (push_moves)(p_moves, PieceKind::Bishop);
+                p_moves = self.pseudo_bishop_moves(square);
+                p_kind = PieceKind::Bishop;
             // Rook
             } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
-                let p_moves = self.pseudo_rook_moves(square);
-                (push_moves)(p_moves, PieceKind::Rook);
+                p_moves = self.pseudo_rook_moves(square);
+                p_kind = PieceKind::Rook;
             // Queen
             } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
-                let p_moves = self.pseudo_bishop_moves(square) | self.pseudo_rook_moves(square);
-                (push_moves)(p_moves, PieceKind::Queen);
+                p_moves = self.pseudo_bishop_moves(square) | self.pseudo_rook_moves(square);
+                p_kind = PieceKind::Queen;
             // Knight
             } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Knight) != 0 {
-                let p_moves = self.pseudo_knight_moves(square);
-                (push_moves)(p_moves, PieceKind::Knight);
+                p_moves = self.pseudo_knight_moves(square);
+                p_kind = PieceKind::Knight;
             // Pawn
             } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Pawn) != 0 {
                 let p_moves = self.pseudo_pawn_moves(square);
 
                 let legal_moves = p_moves & restricted;
 
-                // handle pawn moves separately
+                // handle inserting pawn moves
                 let promotable = match self.position.active_color {
                     Color::White => square.rank() == 6,
                     Color::Black => square.rank() == 1,
@@ -190,12 +177,7 @@ impl<'a> Generator<'a> {
                             capture: self.o_moves.resolve_capture(to_square),
                         };
 
-                        for promote_to in [
-                            PieceKind::Knight,
-                            PieceKind::Bishop,
-                            PieceKind::Rook,
-                            PieceKind::Queen,
-                        ] {
+                        for promote_to in PieceKind::PROMOTABLE {
                             moves.push(MoveExt {
                                 promotion: Some(promote_to),
                                 ..p_move
@@ -217,6 +199,22 @@ impl<'a> Generator<'a> {
                         moves.push(p_move);
                     }
                 }
+
+                continue;
+            }
+
+            let legal_moves = p_moves & restricted;
+
+            for to_square in legal_moves.set_iter() {
+                let p_move = MoveExt {
+                    from: square,
+                    to: to_square,
+                    piece_kind: p_kind,
+                    promotion: None,
+                    capture: self.o_moves.resolve_capture(to_square),
+                };
+
+                moves.push(p_move);
             }
         }
 
@@ -250,7 +248,7 @@ impl<'a> Generator<'a> {
     }
 
     fn sliding_attacks<const DIR: u8>(square: Square, blockers: BitBoard) -> [BitBoard; 4] {
-        let mut moves = [BitBoard(0); 4];
+        let mut moves = [BitBoard::ZERO; 4];
 
         let (max, shifts) = match DIR {
             0 => {
@@ -461,8 +459,8 @@ impl CastlingChecks {
     #[inline]
     const fn zero() -> Self {
         Self {
-            clear: BitBoard(0),
-            safe: BitBoard(0),
+            clear: BitBoard::ZERO,
+            safe: BitBoard::ZERO,
             to_sq: Square::from_index_unchecked(0),
         }
     }
@@ -484,21 +482,14 @@ mod test {
         where
             F: Fn(Generator<'_>, Square) -> BitBoard,
         {
-            let position = sealion_fen::de::parse(self.fen)
-                .expect(&format!("`{}` failed due to bad fen", self.name))
-                .1;
+            let position = sealion_fen::from_str(self.fen)
+                .expect(&format!("`{}` failed due to bad fen", self.name));
             let square = Square::try_from(self.sq)
                 .expect(&format!("`{}` failed due to bad square", self.name));
+            let generator = Generator::new(&position);
 
-            {
-                let generator = Generator::new(&position);
-
-                {
-                    let result = f(generator, square);
-
-                    assert_eq!(result, self.result, "`{}` failed", self.name);
-                }
-            }
+            let result = f(generator, square);
+            assert_eq!(result, self.result, "`{}` failed", self.name);
         }
     }
 

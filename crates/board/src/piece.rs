@@ -46,6 +46,13 @@ pub enum PieceKind {
 }
 
 impl PieceKind {
+    pub const PROMOTABLE: [Self; 4] = [
+        PieceKind::Knight,
+        PieceKind::Bishop,
+        PieceKind::Rook,
+        PieceKind::Queen,
+    ];
+
     /// Standard notation for this piece kind.
     #[inline]
     #[rustfmt::skip]

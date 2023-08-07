@@ -28,7 +28,7 @@ pub fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
 }
 
 fn do_perft(fen: &str, x: usize, result: usize) {
-    let position = sealion_fen::de::parse(fen).unwrap().1;
+    let position = sealion_fen::from_str(fen).unwrap();
     let nodes = perft(&position, x, x);
     assert_eq!(nodes, result);
 }

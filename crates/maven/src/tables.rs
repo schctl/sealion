@@ -3,7 +3,7 @@
 use sealion_board::{BitBoard, Square};
 
 pub const PAWN_ATTACKS: [BitBoard; 128] = {
-    let mut all_moves = [BitBoard(0); 128];
+    let mut all_moves = [BitBoard::ZERO; 128];
 
     // white
     let mut i = 0;
@@ -49,7 +49,7 @@ pub const PAWN_ATTACKS: [BitBoard; 128] = {
 };
 
 pub const KNIGHT_ATTACKS: [BitBoard; 64] = {
-    let mut all_moves = [BitBoard(0); 64];
+    let mut all_moves = [BitBoard::ZERO; 64];
 
     let mut i = 0;
     while i < 64 {
@@ -94,7 +94,7 @@ pub const KNIGHT_ATTACKS: [BitBoard; 64] = {
 };
 
 pub const KING_ATTACKS: [BitBoard; 64] = {
-    let mut all_moves = [BitBoard(0); 64];
+    let mut all_moves = [BitBoard::ZERO; 64];
 
     let mut i = 0;
     while i < 64 {
