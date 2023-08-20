@@ -6,7 +6,7 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
-use strum::EnumCount;
+pub use strum::{EnumCount, IntoEnumIterator};
 
 pub mod bitboard;
 pub mod moves;
@@ -117,24 +117,14 @@ pub struct Board {
 impl Board {
     /// Get the color at a certain square.
     pub fn get_color(&self, square: Square) -> Option<Color> {
-        self.color_bb.iter().enumerate().find_map(|(n, bb)| {
-            if bb.get(square) {
-                Color::from_repr(n as u8)
-            } else {
-                None
-            }
-        })
+        let square_bb = BitBoard::from_square(square);
+        Color::iter().find(|&color| square_bb & self.color_bb[color as u8 as usize] != 0)
     }
 
     /// Get the piece type at a certain square.
     pub fn get_piece_kind(&self, square: Square) -> Option<PieceKind> {
-        self.piece_bb.iter().enumerate().find_map(|(n, bb)| {
-            if bb.get(square) {
-                PieceKind::from_repr(n as u8)
-            } else {
-                None
-            }
-        })
+        let square_bb = BitBoard::from_square(square);
+        PieceKind::iter().find(|&kind| square_bb & self.piece_bb[kind as u8 as usize] != 0)
     }
 
     /// Get the piece at a certain square.

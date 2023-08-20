@@ -1,22 +1,19 @@
 //! Move generator implementation.
-//!
-//! Why is it called Maven? I dunno. It sounds better than "movegen" tho.
-
-#![allow(clippy::comparison_chain)]
 
 use std::cmp::min;
+use std::ops::BitOr;
 
-use sealion_board::{BitBoard, CastlingRights, Color, MoveExt, Piece, PieceKind, Position, Square};
+use sealion_board::{BitBoard, CastlingRights, Color, MoveExt, PieceKind, Square};
 use smallvec::SmallVec;
 
-mod o_moves;
+use crate::state::PositionState;
+use PieceKind::*;
+
 mod tables;
 
-pub use o_moves::OpponentMoves;
-
 #[inline]
-fn merge_bb(boards: [BitBoard; 4]) -> BitBoard {
-    boards[0] | boards[1] | boards[2] | boards[3]
+pub fn merge_bb<const U: usize>(boards: [BitBoard; U]) -> BitBoard {
+    boards.into_iter().fold(BitBoard::ZERO, BitOr::bitor)
 }
 
 /// The primary structure which contains relevant piece state information, such as attacks and checks.
@@ -30,7 +27,7 @@ pub enum MoveList {
 impl MoveList {
     /// Generate the full [`MoveList`] without going through an intermediate generator.
     #[inline]
-    pub fn generate(position: &Position) -> Self {
+    pub fn generate(position: &PositionState) -> Self {
         let generator = Generator::new(position);
         generator.generate()
     }
@@ -40,34 +37,20 @@ impl MoveList {
 #[derive(Debug, Clone)]
 pub struct Generator<'a> {
     /// The position we are generating moves for.
-    position: &'a Position,
-    /// The opponent moves from this position.
-    o_moves: OpponentMoves,
-    /// Our king square.
-    king_sq: BitBoard,
+    state: &'a PositionState<'a>,
 }
 
 impl<'a> Generator<'a> {
-    pub fn new(position: &'a Position) -> Self {
-        let king_sq = position.board.get_piece_bb(Piece {
-            color: position.active_color,
-            kind: PieceKind::King,
-        });
-
-        let o_moves = OpponentMoves::generate(position, king_sq);
-
-        Self {
-            position,
-            o_moves,
-            king_sq,
-        }
+    #[inline]
+    pub fn new(state: &'a PositionState) -> Self {
+        Self { state }
     }
 
     pub fn generate(&self) -> MoveList {
         let move_list = self.generate_impl();
 
         if move_list.is_empty() {
-            if self.o_moves.attacks & self.king_sq != 0 {
+            if self.state.attacks.bb & self.state.board_ext.king_bb != 0 {
                 return MoveList::Checkmate;
             }
             return MoveList::Stalemate;
@@ -80,16 +63,16 @@ impl<'a> Generator<'a> {
         let mut moves = Vec::with_capacity(256);
 
         // initial king move generation
-        let king_sq = self.king_sq.to_square_unchecked();
-        let king_moves = self.pseudo_king_moves(king_sq) & !self.o_moves.attacks;
+        let king_sq = self.state.board_ext.king_bb.to_square_unchecked();
+        let king_moves = self.pseudo_king_moves(king_sq) & !self.state.attacks.bb;
 
         for to_square in king_moves.set_iter() {
             let p_move = MoveExt {
                 from: king_sq,
                 to: to_square,
-                piece_kind: PieceKind::King,
+                piece_kind: King,
                 promotion: None,
-                capture: self.o_moves.resolve_capture(to_square),
+                capture: self.state.resolve_capture_only(to_square),
             };
 
             moves.push(p_move);
@@ -97,7 +80,7 @@ impl<'a> Generator<'a> {
 
         // Double check
         // - Forced king move
-        if self.o_moves.checkers.melee.len() + self.o_moves.checkers.sliders.len() > 1 {
+        if self.state.attacks.checkers.melee.len() + self.state.attacks.checkers.sliders.len() > 1 {
             return moves;
         }
 
@@ -106,7 +89,7 @@ impl<'a> Generator<'a> {
         // Melee check
         // - Checker can be captured
         // ~ King move to non-attacked square
-        if let Some(checker_sq) = self.o_moves.checkers.melee.get(0) {
+        if let Some(checker_sq) = self.state.attacks.checkers.melee.get(0) {
             restricted = BitBoard::from_square(*checker_sq);
         }
 
@@ -114,12 +97,16 @@ impl<'a> Generator<'a> {
         // - Checker can be captured
         // - Checker can be blocked along attack-ray
         // ~ King move to non-attacked square
-        if let Some(checker_ray) = self.o_moves.checkers.sliders.get(0) {
+        if let Some(checker_ray) = self.state.attacks.checkers.sliders.get(0) {
             restricted = *checker_ray;
         }
 
         // Generate other piece moves
-        let friendly = self.position.board.get_color_bb(self.position.active_color);
+        let friendly = self
+            .state
+            .position
+            .board
+            .get_color_bb(self.state.position.active_color);
 
         for square in friendly.set_iter() {
             let square_bb = BitBoard::from_square(square);
@@ -127,7 +114,7 @@ impl<'a> Generator<'a> {
             // Handle pins
             let mut restricted = restricted;
 
-            for pinned in &self.o_moves.pinners {
+            for pinned in &self.state.attacks.pinners {
                 if square_bb & *pinned != 0 {
                     restricted &= *pinned;
                     break;
@@ -135,34 +122,15 @@ impl<'a> Generator<'a> {
             }
 
             // Generate moves
-            let mut p_moves = BitBoard::ZERO;
-            let mut p_kind = PieceKind::Pawn;
+            let p_kind = self.state.board_ext.get(square).unwrap().kind;
+            let p_moves = self.pseudo_moves(square, p_kind);
 
-            // Bishop
-
-            if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Bishop) != 0 {
-                p_moves = self.pseudo_bishop_moves(square);
-                p_kind = PieceKind::Bishop;
-            // Rook
-            } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Rook) != 0 {
-                p_moves = self.pseudo_rook_moves(square);
-                p_kind = PieceKind::Rook;
-            // Queen
-            } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Queen) != 0 {
-                p_moves = self.pseudo_bishop_moves(square) | self.pseudo_rook_moves(square);
-                p_kind = PieceKind::Queen;
-            // Knight
-            } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Knight) != 0 {
-                p_moves = self.pseudo_knight_moves(square);
-                p_kind = PieceKind::Knight;
-            // Pawn
-            } else if square_bb & self.position.board.get_piece_kind_bb(PieceKind::Pawn) != 0 {
-                let p_moves = self.pseudo_pawn_moves(square);
-
+            if p_kind == Pawn {
+                // insert pawn moves separately
                 let legal_moves = p_moves & restricted;
 
                 // handle inserting pawn moves
-                let promotable = match self.position.active_color {
+                let promotable = match self.state.position.active_color {
                     Color::White => square.rank() == 6,
                     Color::Black => square.rank() == 1,
                 };
@@ -172,9 +140,9 @@ impl<'a> Generator<'a> {
                         let p_move = MoveExt {
                             from: square,
                             to: to_square,
-                            piece_kind: PieceKind::Pawn,
+                            piece_kind: Pawn,
                             promotion: None,
-                            capture: self.o_moves.resolve_capture(to_square),
+                            capture: self.state.resolve_capture_only(to_square),
                         };
 
                         for promote_to in PieceKind::PROMOTABLE {
@@ -189,32 +157,29 @@ impl<'a> Generator<'a> {
                         let p_move = MoveExt {
                             from: square,
                             to: to_square,
-                            piece_kind: PieceKind::Pawn,
+                            piece_kind: Pawn,
                             promotion: None,
-                            capture: self.o_moves.resolve_capture(to_square).or_else(|| {
-                                self.o_moves.resolve_ep(to_square, self.position.ep_target)
-                            }),
+                            capture: self.state.resolve_capture(to_square),
                         };
 
                         moves.push(p_move);
                     }
                 }
+            } else {
+                // insert other piece moves
+                let legal_moves = p_moves & restricted;
 
-                continue;
-            }
+                for to_square in legal_moves.set_iter() {
+                    let p_move = MoveExt {
+                        from: square,
+                        to: to_square,
+                        piece_kind: p_kind,
+                        promotion: None,
+                        capture: self.state.resolve_capture_only(to_square),
+                    };
 
-            let legal_moves = p_moves & restricted;
-
-            for to_square in legal_moves.set_iter() {
-                let p_move = MoveExt {
-                    from: square,
-                    to: to_square,
-                    piece_kind: p_kind,
-                    promotion: None,
-                    capture: self.o_moves.resolve_capture(to_square),
-                };
-
-                moves.push(p_move);
+                    moves.push(p_move);
+                }
             }
         }
 
@@ -227,6 +192,18 @@ impl<'a> Generator<'a> {
 }
 
 impl<'a> Generator<'a> {
+    #[rustfmt::skip]
+    pub fn pseudo_moves(&self, square: Square, kind: PieceKind) -> BitBoard {
+        match kind {
+            Pawn   => self.pseudo_pawn_moves(square),
+            Knight => self.pseudo_knight_moves(square),
+            Bishop => self.pseudo_bishop_moves(square),
+            Rook   => self.pseudo_rook_moves(square),
+            Queen  => self.pseudo_bishop_moves(square) | self.pseudo_rook_moves(square),
+            King   => self.pseudo_king_moves(square),
+        }
+    }
+
     #[inline]
     pub fn pseudo_bishop_moves(&self, square: Square) -> BitBoard {
         self.sliding_moves::<0>(square)
@@ -239,15 +216,19 @@ impl<'a> Generator<'a> {
 
     #[inline]
     fn sliding_moves<const DIR: u8>(&self, square: Square) -> BitBoard {
-        let friendly = self.position.board.get_color_bb(self.position.active_color);
-        let blockers = self.position.board.get_full_bb();
+        let friendly = self
+            .state
+            .position
+            .board
+            .get_color_bb(self.state.position.active_color);
+        let blockers = self.state.position.board.get_full_bb();
 
         let attacks = Self::sliding_attacks::<DIR>(square, blockers);
 
         merge_bb(attacks) & !friendly
     }
 
-    fn sliding_attacks<const DIR: u8>(square: Square, blockers: BitBoard) -> [BitBoard; 4] {
+    pub fn sliding_attacks<const DIR: u8>(square: Square, blockers: BitBoard) -> [BitBoard; 4] {
         let mut moves = [BitBoard::ZERO; 4];
 
         let (max, shifts) = match DIR {
@@ -296,35 +277,41 @@ impl<'a> Generator<'a> {
         moves
     }
 
-    fn knight_attacks(square: Square) -> BitBoard {
+    pub fn knight_attacks(square: Square) -> BitBoard {
         tables::KNIGHT_ATTACKS[square.raw_index() as usize]
     }
 
     #[inline]
     pub fn pseudo_knight_moves(&self, square: Square) -> BitBoard {
-        Self::knight_attacks(square) & !self.position.board.get_color_bb(self.position.active_color)
+        Self::knight_attacks(square)
+            & !self
+                .state
+                .position
+                .board
+                .get_color_bb(self.state.position.active_color)
     }
 
-    fn pawn_attacks(square: Square, color: Color) -> BitBoard {
+    pub fn pawn_attacks(square: Square, color: Color) -> BitBoard {
         tables::PAWN_ATTACKS[(square.raw_index() + (color as u8 * 64)) as usize]
     }
 
     pub fn pseudo_pawn_moves(&self, square: Square) -> BitBoard {
         let mut unfriendly = self
+            .state
             .position
             .board
-            .get_color_bb(self.position.active_color.opposite());
-        let blockers = self.position.board.get_full_bb();
+            .get_color_bb(self.state.position.active_color.opposite());
+        let blockers = self.state.position.board.get_full_bb();
 
         // fake a piece for ep
-        if let Some(ep_target) = self.position.ep_target {
+        if let Some(ep_target) = self.state.position.ep_target {
             unfriendly |= BitBoard::from_square(ep_target);
         }
 
         let start = BitBoard::from_square(square);
-        let mut moves = Self::pawn_attacks(square, self.position.active_color) & unfriendly;
+        let mut moves = Self::pawn_attacks(square, self.state.position.active_color) & unfriendly;
 
-        match self.position.active_color {
+        match self.state.position.active_color {
             Color::White => {
                 let next = start << 8;
 
@@ -365,13 +352,18 @@ impl<'a> Generator<'a> {
         moves
     }
 
-    fn king_attacks(square: Square) -> BitBoard {
+    pub fn king_attacks(square: Square) -> BitBoard {
         tables::KING_ATTACKS[square.raw_index() as usize]
     }
 
     #[inline]
     pub fn pseudo_king_moves(&self, square: Square) -> BitBoard {
-        Self::king_attacks(square) & !self.position.board.get_color_bb(self.position.active_color)
+        Self::king_attacks(square)
+            & !self
+                .state
+                .position
+                .board
+                .get_color_bb(self.state.position.active_color)
     }
 
     const CASTLING_CHECKS: [CastlingChecks; 4] = {
@@ -407,13 +399,13 @@ impl<'a> Generator<'a> {
     fn castling_moves(&self) -> SmallVec<[MoveExt; 2]> {
         let mut moves = SmallVec::new();
 
-        let blockers = self.position.board.get_full_bb();
+        let blockers = self.state.position.board.get_full_bb();
 
         let mut do_checks = |checks: CastlingChecks| {
-            if checks.clear & blockers == 0 && checks.safe & self.o_moves.attacks == 0 {
+            if checks.clear & blockers == 0 && checks.safe & self.state.attacks.bb == 0 {
                 moves.push(MoveExt {
-                    piece_kind: PieceKind::King,
-                    from: self.king_sq.to_square_unchecked(),
+                    piece_kind: King,
+                    from: self.state.board_ext.king_bb.to_square_unchecked(),
                     to: checks.to_sq,
                     promotion: None,
                     capture: None,
@@ -421,20 +413,40 @@ impl<'a> Generator<'a> {
             }
         };
 
-        match self.position.active_color {
+        match self.state.position.active_color {
             Color::White => {
-                if self.position.castling.contains(CastlingRights::WHITE_OO) {
+                if self
+                    .state
+                    .position
+                    .castling
+                    .contains(CastlingRights::WHITE_OO)
+                {
                     (do_checks)(Self::CASTLING_CHECKS[0]);
                 }
-                if self.position.castling.contains(CastlingRights::WHITE_OOO) {
+                if self
+                    .state
+                    .position
+                    .castling
+                    .contains(CastlingRights::WHITE_OOO)
+                {
                     (do_checks)(Self::CASTLING_CHECKS[1]);
                 }
             }
             Color::Black => {
-                if self.position.castling.contains(CastlingRights::BLACK_OO) {
+                if self
+                    .state
+                    .position
+                    .castling
+                    .contains(CastlingRights::BLACK_OO)
+                {
                     (do_checks)(Self::CASTLING_CHECKS[2]);
                 }
-                if self.position.castling.contains(CastlingRights::BLACK_OOO) {
+                if self
+                    .state
+                    .position
+                    .castling
+                    .contains(CastlingRights::BLACK_OOO)
+                {
                     (do_checks)(Self::CASTLING_CHECKS[3]);
                 }
             }
@@ -469,6 +481,7 @@ impl CastlingChecks {
 #[cfg(test)]
 mod test {
     use super::*;
+    use sealion_board::Position;
 
     struct MoveTester {
         pub name: &'static str,
@@ -484,9 +497,10 @@ mod test {
         {
             let position = sealion_fen::from_str(self.fen)
                 .expect(&format!("`{}` failed due to bad fen", self.name));
+            let state = PositionState::generate(&position);
             let square = Square::try_from(self.sq)
                 .expect(&format!("`{}` failed due to bad square", self.name));
-            let generator = Generator::new(&position);
+            let generator = Generator::new(&state);
 
             let result = f(generator, square);
             assert_eq!(result, self.result, "`{}` failed", self.name);
@@ -582,7 +596,8 @@ mod test {
     #[test]
     fn full_move_gen() {
         let position = Position::starting();
-        let moves = MoveList::generate(&position);
+        let state = PositionState::generate(&position);
+        let moves = MoveList::generate(&state);
 
         match moves {
             MoveList::Moves(moves) => {

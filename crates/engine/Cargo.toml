@@ -1,5 +1,5 @@
 [package]
-name = "sealion_maven"
+name = "sealion_engine"
 edition = { workspace = true }
 version = { workspace = true }
 publish = { workspace = true }
@@ -21,4 +21,8 @@ version = "0.4"
 
 [[bench]]
 name = "movegen"
+harness = false
+
+[[bench]]
+name = "state"
 harness = false

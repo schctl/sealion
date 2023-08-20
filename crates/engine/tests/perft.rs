@@ -1,7 +1,8 @@
 use paste::paste;
 
 use sealion_board::Position;
-use sealion_maven::MoveList;
+use sealion_engine::movegen::MoveList;
+use sealion_engine::state::PositionState;
 
 pub fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
     if depth == 0 {
@@ -10,7 +11,9 @@ pub fn perft(position: &Position, depth: usize, debug_depth: usize) -> usize {
 
     let mut nodes = 0;
 
-    if let MoveList::Moves(moves) = MoveList::generate(&position) {
+    let state = PositionState::generate(&position);
+
+    if let MoveList::Moves(moves) = MoveList::generate(&state) {
         for p_move in moves.into_iter() {
             let mut new_position = position.clone();
             new_position.apply_move_unchecked(p_move);

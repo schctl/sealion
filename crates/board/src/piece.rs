@@ -2,11 +2,14 @@
 
 use std::ops::Not;
 
-use strum::{EnumCount, FromRepr};
+use strum::{EnumCount, EnumIter, FromRepr};
+
+use Color::*;
+use PieceKind::*;
 
 /// Represents a player or a piece's color.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumCount, FromRepr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumCount, EnumIter, FromRepr)]
 pub enum Color {
     White,
     Black,
@@ -17,8 +20,8 @@ impl Color {
     #[inline]
     pub const fn opposite(&self) -> Self {
         match self {
-            Self::White => Self::Black,
-            Self::Black => Self::White,
+            White => Black,
+            Black => White,
         }
     }
 }
@@ -35,7 +38,7 @@ impl Not for Color {
 
 /// All possible piece types.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumCount, FromRepr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumCount, EnumIter, FromRepr)]
 pub enum PieceKind {
     Pawn,
     Knight,
@@ -46,25 +49,41 @@ pub enum PieceKind {
 }
 
 impl PieceKind {
-    pub const PROMOTABLE: [Self; 4] = [
-        PieceKind::Knight,
-        PieceKind::Bishop,
-        PieceKind::Rook,
-        PieceKind::Queen,
-    ];
+    pub const PROMOTABLE: [Self; 4] = [Knight, Bishop, Rook, Queen];
 
     /// Standard notation for this piece kind.
     #[inline]
     #[rustfmt::skip]
     pub const fn as_char(&self) -> char {
         match self {
-            PieceKind::Pawn   => 'P',
-            PieceKind::Knight => 'N',
-            PieceKind::Bishop => 'B',
-            PieceKind::Rook   => 'R',
-            PieceKind::Queen  => 'Q',
-            PieceKind::King   => 'K',
+            Pawn   => 'P',
+            Knight => 'N',
+            Bishop => 'B',
+            Rook   => 'R',
+            Queen  => 'Q',
+            King   => 'K',
         }
+    }
+
+    /// Piece valuation on some arbitrary scale.
+    #[inline]
+    #[rustfmt::skip]
+    pub const fn score(&self) -> i16 {
+        match self {
+            Pawn   => 100,
+            Knight => 300,
+            Bishop => 325,
+            Rook   => 500,
+            Queen  => 900,
+            King   => 10_000, // real
+        }
+    }
+
+    /// Check if this piece performs "ray" attacks.
+    #[inline]
+    #[rustfmt::skip]
+    pub const fn is_slider(&self) -> bool {
+        matches!(self, Bishop | Rook | Queen)
     }
 }
 
@@ -82,20 +101,20 @@ impl Piece {
     pub const fn as_char(&self) -> char {
         match self.color {
             Color::White => match self.kind {
-                PieceKind::Pawn   => 'P',
-                PieceKind::Knight => 'N',
-                PieceKind::Bishop => 'B',
-                PieceKind::Rook   => 'R',
-                PieceKind::Queen  => 'Q',
-                PieceKind::King   => 'K',
+                Pawn   => 'P',
+                Knight => 'N',
+                Bishop => 'B',
+                Rook   => 'R',
+                Queen  => 'Q',
+                King   => 'K',
             },
             Color::Black => match self.kind {
-                PieceKind::Pawn   => 'p',
-                PieceKind::Knight => 'n',
-                PieceKind::Bishop => 'b',
-                PieceKind::Rook   => 'r',
-                PieceKind::Queen  => 'q',
-                PieceKind::King   => 'k',
+                Pawn   => 'p',
+                Knight => 'n',
+                Bishop => 'b',
+                Rook   => 'r',
+                Queen  => 'q',
+                King   => 'k',
             },
         }
     }
@@ -103,19 +122,19 @@ impl Piece {
     #[inline]
     pub const fn from_char(c: char) -> Option<Self> {
         let (color, kind) = match c {
-            'P' => (Color::White, PieceKind::Pawn),
-            'N' => (Color::White, PieceKind::Knight),
-            'B' => (Color::White, PieceKind::Bishop),
-            'R' => (Color::White, PieceKind::Rook),
-            'Q' => (Color::White, PieceKind::Queen),
-            'K' => (Color::White, PieceKind::King),
+            'P' => (White, Pawn),
+            'N' => (White, Knight),
+            'B' => (White, Bishop),
+            'R' => (White, Rook),
+            'Q' => (White, Queen),
+            'K' => (White, King),
             // -
-            'p' => (Color::Black, PieceKind::Pawn),
-            'n' => (Color::Black, PieceKind::Knight),
-            'b' => (Color::Black, PieceKind::Bishop),
-            'r' => (Color::Black, PieceKind::Rook),
-            'q' => (Color::Black, PieceKind::Queen),
-            'k' => (Color::Black, PieceKind::King),
+            'p' => (Black, Pawn),
+            'n' => (Black, Knight),
+            'b' => (Black, Bishop),
+            'r' => (Black, Rook),
+            'q' => (Black, Queen),
+            'k' => (Black, King),
             _ => return None,
         };
 
