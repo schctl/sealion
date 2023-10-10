@@ -1,0 +1,12 @@
+[package]
+name = "uif"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+nom = "7"
+paste = "1"
+thiserror = "1"
