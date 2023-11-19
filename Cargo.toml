@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "crates/*",
+    "crates/uif/derive",
+    "crates/uif/tests/*"
 ]
 
 [workspace.package]
