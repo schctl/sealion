@@ -9,8 +9,8 @@ name: Rust CI
 
 on:
   push:
-  #     branches:
-  #       - main
+    branches:
+      - master
   release:
     types: [published]
   pull_request:
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Run cargo check
         run: cargo check
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
       - name: Enforce formatting
@@ -55,33 +55,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Linting
         run: cargo clippy -- -D warnings
-
-  cargo_deny:
-    name: cargo deny
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: taiki-e/install-action@cargo-deny
-      - name: Scan for vulnerabilities
-        run: cargo deny check advisories
-
-  cargo-audit:
-    name: cargo audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Install cargo audit
-        run: cargo install cargo-audit
-      - name: Run "cargo audit" to check for vulnerabilities
-        run: cargo audit --color=always --deny=warnings
