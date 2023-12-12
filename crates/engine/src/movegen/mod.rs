@@ -165,7 +165,7 @@ impl<'a> Generator<'a> {
                         moves.push(p_move);
                     }
                 }
-            } else {
+            } else if p_kind != King {
                 // insert other piece moves
                 let legal_moves = p_moves & restricted;
 

@@ -53,12 +53,26 @@ macro_rules! def_test {
     };
 }
 
+// ======================== TEST CASES ========================
+
 def_test! {
     start_pos "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" => [
+        1 => 20,
+        2 => 400,
         3 => 8_902,
         4 => 197_281,
         5 => 4_865_609
         // 6 => 119_060_324
+    ]
+}
+
+def_test! {
+    // https://www.chessprogramming.org/Perft_Results#Position_4
+    pos_4 "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1" => [
+        1 => 6,
+        2 => 264,
+        3 => 9_467,
+        4 => 422_333
     ]
 }
 

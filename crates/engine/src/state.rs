@@ -121,7 +121,7 @@ impl<'a> PositionState<'a> {
         let mut handle_king_atk = |pinner: [BitBoard; 4]| {
             for ray in pinner {
                 if ray & self.board_ext.king_bb != 0 {
-                    let intersect = ray & unfriendly;
+                    let intersect = ray & friendly;
                     let n_intersect = intersect.0.count_ones();
 
                     if n_intersect == 1 {
