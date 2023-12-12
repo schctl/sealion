@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "crates/*"
+    "crates/*",
+    "crates/uci/uif"
 ]
 
 [workspace.package]
@@ -14,6 +15,7 @@ authors = ["Sachin Cherian <sachinctl@protonmail.com>"]
 sealion_board = { path = "crates/board" }
 sealion_fen = { path = "crates/fen" }
 sealion_engine = { path = "crates/engine" }
+sealion_uci = { path = "crates/uci" }
 
 # --- sealion binary ---
 
@@ -29,6 +31,7 @@ authors = { workspace = true }
 sealion_board = { workspace = true }
 sealion_fen = { workspace = true }
 sealion_engine = { workspace = true }
+sealion_uci = { workspace = true }
 
 [profile.release]
 lto = true
