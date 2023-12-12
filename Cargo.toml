@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/*",
+    "crates/uci/uif"
 ]
 
 [workspace.package]
